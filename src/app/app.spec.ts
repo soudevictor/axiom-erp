@@ -1,12 +1,20 @@
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
+import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { describe, it, expect, beforeEach } from 'vitest';
-import { App } from '@/app';
+import { App } from './app';
+import { routes } from './app.routes';
+import { mockApiInterceptor } from '@/core/interceptors/mock-api.interceptor';
 
 describe('App Component', () => {
-  beforeEach(async () => {
-    await TestBed.configureTestingModule({
+  beforeEach(() => {
+    TestBed.configureTestingModule({
       imports: [App],
-    }).compileComponents();
+      providers: [
+        provideRouter(routes),
+        provideHttpClient(withInterceptors([mockApiInterceptor])),
+      ],
+    });
   });
 
   it('should create the app component', () => {
