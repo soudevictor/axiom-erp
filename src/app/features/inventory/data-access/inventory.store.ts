@@ -24,6 +24,10 @@ interface InventoryState {
   loading: boolean;
   error: string | null;
   filters: InventoryFilter;
+  summaryStats: {
+    lowStockCount: number;
+    totalStockValue: number;
+  } | null;
 }
 
 const initialState: InventoryState = {
@@ -32,6 +36,7 @@ const initialState: InventoryState = {
   loading: false,
   error: null,
   filters: DEFAULT_INVENTORY_FILTER,
+  summaryStats: null,
 };
 
 function buildHttpParams(filters: InventoryFilter): HttpParams {
@@ -60,19 +65,28 @@ export const InventoryStore = signalStore(
   withState(initialState),
 
   withComputed((store) => ({
-    lowStockCount: computed(() =>
-      store.items().filter(
-        (item) =>
-          item.status === 'LOW_STOCK' || item.quantity <= item.minThreshold
-      ).length
-    ),
+    lowStockCount: computed(() => {
+      const summary = store.summaryStats();
+      if (summary !== null) {
+        return summary.lowStockCount;
+      }
+      return store
+        .items()
+        .filter(
+          (item) =>
+            item.status === 'LOW_STOCK' || item.quantity <= item.minThreshold
+        ).length;
+    }),
 
-    totalStockValue: computed(() =>
-      store.items().reduce(
-        (sum, item) => sum + item.quantity * item.unitPrice,
-        0
-      )
-    ),
+    totalStockValue: computed(() => {
+      const summary = store.summaryStats();
+      if (summary !== null) {
+        return summary.totalStockValue;
+      }
+      return store
+        .items()
+        .reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+    }),
 
     hasActiveFilters: computed(() => {
       const filters = store.filters();
@@ -97,10 +111,18 @@ export const InventoryStore = signalStore(
             http.get<PaginatedResponse<InventoryItem>>(API_URL, { params })
           );
 
+          const summaryStats = response.summary
+            ? {
+                lowStockCount: response.summary['lowStockCount'] ?? 0,
+                totalStockValue: response.summary['totalStockValue'] ?? 0,
+              }
+            : null;
+
           patchState(store, {
             items: response.data,
             totalItems: response.totalItems,
             loading: false,
+            summaryStats,
           });
         } catch (err: unknown) {
           const message =

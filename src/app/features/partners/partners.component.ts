@@ -1,6 +1,16 @@
-import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { LucideAngularModule, Users, Search, Plus, Building2, CheckCircle2 } from 'lucide-angular';
+import { FormsModule } from '@angular/forms';
+import {
+  LucideAngularModule,
+  Users,
+  Search,
+  Plus,
+  Building2,
+  CheckCircle2,
+  XCircle,
+} from 'lucide-angular';
+
 import { StatCardComponent } from '@/shared/ui/stat-card/stat-card.component';
 import { BadgeComponent } from '@/shared/ui/badge/badge.component';
 
@@ -9,51 +19,73 @@ export interface B2BPartner {
   readonly cnpj: string;
   readonly companyName: string;
   readonly category: 'FORNECEDOR' | 'CLIENTE_DIRETO' | 'DISTRIBUIDOR';
-  readonly status: 'ATIVO' | 'BLOQUEADO';
+  readonly status: 'HOMOLOGADO' | 'EM_ANALISE' | 'BLOQUEADO';
   readonly creditLimit: number;
+  readonly state: string;
 }
 
 const MOCK_PARTNERS: readonly B2BPartner[] = [
   {
-    id: '1',
+    id: 'PART-001',
     cnpj: '12.345.678/0001-90',
     companyName: 'TechSupply Brasil Distribuidora Ltda',
     category: 'FORNECEDOR',
-    status: 'ATIVO',
+    status: 'HOMOLOGADO',
     creditLimit: 550000,
+    state: 'SP',
   },
   {
-    id: '2',
+    id: 'PART-002',
     cnpj: '98.765.432/0001-10',
     companyName: 'MegaLogística Soluções de Transporte S.A.',
     category: 'DISTRIBUIDOR',
-    status: 'ATIVO',
+    status: 'HOMOLOGADO',
     creditLimit: 300000,
+    state: 'RJ',
   },
   {
-    id: '3',
+    id: 'PART-003',
     cnpj: '45.111.222/0001-33',
     companyName: 'Escritório Central de Eletrônicos Eireli',
     category: 'CLIENTE_DIRETO',
-    status: 'ATIVO',
+    status: 'HOMOLOGADO',
     creditLimit: 120000,
+    state: 'MG',
+  },
+  {
+    id: 'PART-004',
+    cnpj: '77.888.999/0001-44',
+    companyName: 'Hardware & Cia Suprimentos Industriais',
+    category: 'FORNECEDOR',
+    status: 'EM_ANALISE',
+    creditLimit: 450000,
+    state: 'PR',
+  },
+  {
+    id: 'PART-005',
+    cnpj: '33.444.555/0001-55',
+    companyName: 'Global Logistics & Freight Corp',
+    category: 'DISTRIBUIDOR',
+    status: 'HOMOLOGADO',
+    creditLimit: 800000,
+    state: 'RS',
   },
 ];
 
 @Component({
   selector: 'app-partners',
   standalone: true,
-  imports: [CommonModule, LucideAngularModule, StatCardComponent, BadgeComponent],
+  imports: [CommonModule, FormsModule, LucideAngularModule, StatCardComponent, BadgeComponent],
   template: `
     <div class="space-y-6">
       <!-- Section Header -->
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 class="text-2xl font-bold text-slate-100 tracking-tight">
-            Gestão de Parceiros B2B
+            Gestão de Parceiros B2B & Homologação
           </h1>
           <p class="text-xs text-slate-400 mt-1">
-            Cadastro unificado de fornecedores, distribuidores e grandes contas
+            Cadastro unificado de fornecedores, distribuidores, compliance e limites de crédito
           </p>
         </div>
 
@@ -76,7 +108,7 @@ const MOCK_PARTNERS: readonly B2BPartner[] = [
         />
 
         <app-stat-card
-          title="Limite de Crédito Concedido"
+          title="Limite de Crédito Global"
           value="R$ 14.500.000,00"
           subtitle="Política de crédito ativa"
           iconName="Building2"
@@ -85,40 +117,65 @@ const MOCK_PARTNERS: readonly B2BPartner[] = [
         <app-stat-card
           title="Parceiros Homologados"
           value="98.5%"
-          subtitle="Compliance ok"
+          subtitle="Compliance & A11y ok"
           iconName="CheckCircle2"
         />
       </div>
 
-      <!-- Partners Table / Grid Stub -->
-      <div class="p-6 rounded-xl border border-slate-800 bg-slate-900/60 backdrop-blur-md">
-        <div class="flex items-center justify-between gap-4 mb-4">
-          <h3 class="text-sm font-semibold text-slate-200">Parceiros em Destaque</h3>
-          <span class="text-xs text-slate-400">Exibindo registros recentes</span>
+      <!-- Filter Bar -->
+      <div class="p-4 rounded-xl border border-slate-800 bg-slate-900/60 backdrop-blur-md flex items-center justify-between gap-4">
+        <div class="relative flex-1 max-w-md">
+          <lucide-icon [img]="SearchIcon" [size]="16" class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+          <input
+            type="search"
+            [ngModel]="searchQuery()"
+            (ngModelChange)="searchQuery.set($event)"
+            placeholder="Buscar por CNPJ ou Razão Social..."
+            class="w-full pl-9 pr-4 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+          />
         </div>
 
+        <div class="text-xs text-slate-400 font-mono">
+          {{ filteredPartners.length }} parceiros filtrados
+        </div>
+      </div>
+
+      <!-- Partners Table -->
+      <div class="p-6 rounded-xl border border-slate-800 bg-slate-900/60 backdrop-blur-md">
         <div class="overflow-x-auto">
           <table class="w-full text-left text-xs border-collapse">
             <thead>
               <tr class="border-b border-slate-800 text-slate-400 uppercase font-semibold tracking-wider">
                 <th class="py-3 px-4">CNPJ</th>
                 <th class="py-3 px-4">Razão Social</th>
+                <th class="py-3 px-4">UF</th>
                 <th class="py-3 px-4">Categoria</th>
                 <th class="py-3 px-4 text-right">Limite de Crédito</th>
-                <th class="py-3 px-4 text-center">Status</th>
+                <th class="py-3 px-4 text-center">Homologação</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-800/60 text-slate-300">
-              @for (partner of partners; track partner.id) {
+              @for (partner of filteredPartners; track partner.id) {
                 <tr class="hover:bg-slate-800/40 transition-colors">
                   <td class="py-3 px-4 font-mono text-indigo-400 font-medium">{{ partner.cnpj }}</td>
                   <td class="py-3 px-4 font-medium text-slate-100">{{ partner.companyName }}</td>
+                  <td class="py-3 px-4 text-slate-400 font-mono">{{ partner.state }}</td>
                   <td class="py-3 px-4 text-slate-400">{{ partner.category }}</td>
-                  <td class="py-3 px-4 text-right font-medium">
+                  <td class="py-3 px-4 text-right font-mono font-medium">
                     R$ {{ partner.creditLimit | number:'1.2-2':'pt-BR' }}
                   </td>
                   <td class="py-3 px-4 text-center">
-                    <app-badge variant="SUCCESS" label="HOMOLOGADO" />
+                    @switch (partner.status) {
+                      @case ('HOMOLOGADO') {
+                        <app-badge variant="SUCCESS" label="HOMOLOGADO" />
+                      }
+                      @case ('EM_ANALISE') {
+                        <app-badge variant="WARNING" label="EM ANÁLISE" />
+                      }
+                      @case ('BLOQUEADO') {
+                        <app-badge variant="DANGER" label="BLOQUEADO" />
+                      }
+                    }
                   </td>
                 </tr>
               }
@@ -135,6 +192,18 @@ export class PartnersComponent {
   protected readonly UsersIcon = Users;
   protected readonly Building2Icon = Building2;
   protected readonly CheckCircle2Icon = CheckCircle2;
+  protected readonly SearchIcon = Search;
 
-  protected readonly partners: readonly B2BPartner[] = MOCK_PARTNERS;
+  protected readonly searchQuery = signal('');
+  protected readonly partners = signal<readonly B2BPartner[]>(MOCK_PARTNERS);
+
+  get filteredPartners(): readonly B2BPartner[] {
+    const q = this.searchQuery().toLowerCase();
+    if (!q) return this.partners();
+    return this.partners().filter(
+      (p) =>
+        p.companyName.toLowerCase().includes(q) ||
+        p.cnpj.toLowerCase().includes(q)
+    );
+  }
 }

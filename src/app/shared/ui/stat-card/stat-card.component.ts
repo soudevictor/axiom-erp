@@ -2,6 +2,8 @@ import { ChangeDetectionStrategy, Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { LucideAngularModule, TrendingUp, TrendingDown } from 'lucide-angular';
 
+export type LucideIconData = readonly (readonly [string, Record<string, string>])[];
+
 export interface StatTrend {
   readonly value: number;
   readonly isPositive: boolean;
@@ -20,7 +22,11 @@ export interface StatTrend {
         <span class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
           {{ title }}
         </span>
-        @if (iconName) {
+        @if (icon) {
+          <div class="p-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
+            <lucide-icon [img]="icon" [size]="18" />
+          </div>
+        } @else if (iconName) {
           <div class="p-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
             <lucide-icon [name]="iconName" [size]="18" />
           </div>
@@ -67,6 +73,7 @@ export class StatCardComponent {
   @Input() trend?: StatTrend;
   @Input() subtitle?: string;
   @Input() iconName?: string;
+  @Input() icon?: LucideIconData;
 
   protected readonly TrendingUpIcon = TrendingUp;
   protected readonly TrendingDownIcon = TrendingDown;

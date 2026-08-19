@@ -1,15 +1,15 @@
-import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import {
-  LucideAngularModule,
-  LayoutDashboard,
-  Package,
-  Wallet,
-  Users,
   ChevronLeft,
   ChevronRight,
+  LayoutDashboard,
+  LucideAngularModule,
+  Package,
   ShieldCheck,
+  Users,
+  Wallet,
 } from 'lucide-angular';
 
 export interface NavItem {
@@ -25,7 +25,7 @@ export interface NavItem {
   template: `
     <aside
       class="relative flex flex-col h-screen bg-slate-950 border-r border-slate-800/80 text-slate-300 transition-all duration-300 select-none z-30"
-      [ngClass]="isCollapsed() ? 'w-20' : 'w-64'"
+      [ngClass]="isCollapsed() ? 'w-22' : 'w-64'"
       aria-label="Navegação Principal"
     >
       <!-- Header / Logo -->
@@ -34,17 +34,12 @@ export interface NavItem {
           routerLink="/"
           class="flex items-center gap-3 overflow-hidden focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded-lg p-1"
         >
-          <div
-            class="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-bold text-lg shadow-lg shadow-indigo-500/20 shrink-0"
-          >
-            A
+          <div class="flex items-center justify-center w-10 h-10 shrink-0">
+            <img src="logoIcon.svg" alt="logo" />
           </div>
           @if (!isCollapsed()) {
             <div class="flex flex-col">
-              <span class="font-bold text-white text-base tracking-tight leading-none">AxiomERP</span>
-              <span class="text-[10px] uppercase font-semibold text-indigo-400 tracking-wider mt-1">
-                Enterprise Suite
-              </span>
+              <img src="logoWordMark.svg" alt="logo" />
             </div>
           }
         </a>
@@ -56,10 +51,7 @@ export interface NavItem {
           class="hidden md:flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/60 transition-colors"
           [attr.aria-label]="isCollapsed() ? 'Expandir barra lateral' : 'Recolher barra lateral'"
         >
-          <lucide-icon
-            [img]="isCollapsed() ? ChevronRightIcon : ChevronLeftIcon"
-            [size]="18"
-          />
+          <lucide-icon [img]="isCollapsed() ? ChevronRightIcon : ChevronLeftIcon" [size]="18" />
         </button>
       </div>
 
