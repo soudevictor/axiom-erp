@@ -55,10 +55,10 @@ import type {
       <!-- Section Header -->
       <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 class="text-2xl font-bold text-slate-100 tracking-tight">
+          <h1 class="text-2xl font-bold text-content-primary tracking-tight">
             Gestão de Estoque Multi-Armazém
           </h1>
-          <p class="text-xs text-slate-400 mt-1">
+          <p class="text-xs text-content-muted mt-1">
             Controle integrado de inventário reativo em tempo real via Dexie.js (Virtual Scroll @angular/cdk)
           </p>
         </div>
@@ -67,8 +67,9 @@ import type {
           <button
             type="button"
             (click)="reloadItems()"
-            class="p-2 rounded-lg border border-slate-800 bg-slate-900 text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+            class="p-2 rounded-lg border border-border-subtle bg-canvas-surface text-content-muted hover:text-content-primary hover:bg-canvas-elevated transition-colors focus-visible:ring-2 focus-visible:ring-brand"
             title="Atualizar dados localmente"
+            aria-label="Recarregar inventário"
           >
             <lucide-icon
               [img]="RefreshCwIcon"
@@ -80,7 +81,7 @@ import type {
           <button
             type="button"
             (click)="openModalForCreate()"
-            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs shadow-lg shadow-indigo-600/20 transition-colors"
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand hover:bg-brand-hover text-white font-medium text-xs shadow-brand-glow transition-colors focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-canvas-base"
           >
             <lucide-icon [img]="PlusIcon" [size]="16" />
             <span>Novo Produto</span>
@@ -113,16 +114,16 @@ import type {
       </div>
 
       <!-- Filter Controls Bar -->
-      <div class="p-4 rounded-xl border border-slate-800 bg-slate-900/60 backdrop-blur-md flex flex-wrap items-center justify-between gap-4">
+      <div class="p-4 rounded-xl border border-border-subtle bg-canvas-surface backdrop-blur-md flex flex-wrap items-center justify-between gap-4">
         <!-- Debounced Search Input -->
-        <div class="relative flex-1 min-w-[240px]">
-          <lucide-icon [img]="SearchIcon" [size]="16" class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+        <div class="relative flex-1 min-w-60">
+          <lucide-icon [img]="SearchIcon" [size]="16" class="absolute left-3 top-1/2 -translate-y-1/2 text-content-disabled" />
           <input
             type="search"
             [ngModel]="searchQuery()"
             (ngModelChange)="onSearchInputChange($event)"
-            placeholder="Buscar por nome do produto ou SKU (com debounce 300ms)..."
-            class="w-full pl-9 pr-4 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+            placeholder="Buscar por nome do produto ou SKU (debounce 300ms)…"
+            class="w-full pl-9 pr-4 py-2 rounded-lg bg-canvas-elevated border border-border-subtle text-xs text-content-primary placeholder-content-disabled focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors"
             aria-label="Buscar produtos em estoque"
           />
         </div>
@@ -132,7 +133,7 @@ import type {
           <select
             [ngModel]="selectedCategory()"
             (ngModelChange)="onCategoryChange($event)"
-            class="px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-300 focus:outline-none focus:border-indigo-500"
+            class="px-3 py-2 rounded-lg bg-canvas-elevated border border-border-subtle text-xs text-content-primary focus:outline-none focus:border-brand transition-colors"
             aria-label="Filtrar por categoria"
           >
             <option value="ALL">Todas as Categorias</option>
@@ -145,7 +146,7 @@ import type {
           <select
             [ngModel]="selectedStatus()"
             (ngModelChange)="onStatusChange($event)"
-            class="px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-300 focus:outline-none focus:border-indigo-500"
+            class="px-3 py-2 rounded-lg bg-canvas-elevated border border-border-subtle text-xs text-content-primary focus:outline-none focus:border-brand transition-colors"
             aria-label="Filtrar por status"
           >
             <option value="ALL">Todos os Status</option>
@@ -158,7 +159,7 @@ import type {
             <button
               type="button"
               (click)="clearFilters()"
-              class="px-3 py-2 rounded-lg text-xs font-medium text-rose-400 hover:bg-rose-500/10 border border-rose-500/20 transition-colors"
+              class="px-3 py-2 rounded-lg text-xs font-medium text-state-danger hover:bg-state-danger-subtle border border-state-danger/20 transition-colors"
             >
               Limpar Filtros
             </button>
@@ -167,22 +168,27 @@ import type {
       </div>
 
       <!-- 4 STATES PATTERN CONTAINER -->
-      <div class="p-6 rounded-xl border border-slate-800 bg-slate-900/60 backdrop-blur-md">
+      <div class="p-6 rounded-xl border border-border-subtle bg-canvas-surface backdrop-blur-md">
+
         <!-- 1. ERROR STATE -->
         @if (inventoryStore.error()) {
-          <div class="p-4 rounded-lg bg-rose-500/10 border border-rose-500/30 flex items-center justify-between gap-4 text-rose-300">
+          <div
+            class="p-4 rounded-lg bg-state-danger-subtle border border-state-danger/30 flex items-center justify-between gap-4 text-state-danger"
+            role="alert"
+            aria-live="assertive"
+          >
             <div class="flex items-center gap-3">
-              <lucide-icon [img]="AlertCircleIcon" [size]="20" class="text-rose-400 shrink-0" />
+              <lucide-icon [img]="AlertCircleIcon" [size]="20" class="shrink-0" />
               <div>
                 <h4 class="text-xs font-bold uppercase tracking-wider">Falha no Carregamento</h4>
-                <p class="text-xs text-rose-400 mt-0.5">{{ inventoryStore.error() }}</p>
+                <p class="text-xs mt-0.5 text-state-danger/80">{{ inventoryStore.error() }}</p>
               </div>
             </div>
 
             <button
               type="button"
               (click)="reloadItems()"
-              class="px-3 py-1.5 rounded-lg bg-rose-500 text-white font-medium text-xs hover:bg-rose-600 transition-colors"
+              class="px-3 py-1 rounded-lg bg-state-danger text-white font-medium text-xs hover:opacity-90 transition-opacity"
             >
               Tentar Novamente
             </button>
@@ -192,40 +198,40 @@ import type {
         <!-- 2. LOADING STATE (Skeleton) -->
         @else if (inventoryStore.loading()) {
           <div class="space-y-3" aria-live="polite">
-            <div class="flex items-center justify-between pb-2 border-b border-slate-800">
-              <span class="text-xs font-semibold text-slate-400">Carregando inventário...</span>
+            <div class="flex items-center justify-between pb-2 border-b border-border-subtle">
+              <span class="text-xs font-semibold text-content-muted">Carregando inventário…</span>
             </div>
-            <app-skeleton-loader [count]="6" height="2.5rem" />
+            <app-skeleton-loader [count]="8" height="3rem" />
           </div>
         }
 
         <!-- 3. EMPTY STATE -->
         @else if (inventoryStore.items().length === 0) {
           <div class="py-16 flex flex-col items-center justify-center text-center space-y-4">
-            <div class="w-16 h-16 rounded-full bg-slate-800/80 border border-slate-700 flex items-center justify-center text-slate-400 shadow-inner">
+            <div class="w-16 h-16 rounded-full bg-canvas-elevated border border-border-strong flex items-center justify-center text-content-muted shadow-elevation-1">
               <lucide-icon [img]="PackageXIcon" [size]="32" />
             </div>
             <div>
-              <h3 class="text-base font-bold text-slate-100">Nenhum produto encontrado</h3>
-              <p class="text-xs text-slate-400 mt-1 max-w-sm">
+              <h3 class="text-base font-bold text-content-primary">Nenhum produto encontrado</h3>
+              <p class="text-xs text-content-muted mt-1 max-w-sm">
                 Não existem itens que coincidam com os filtros aplicados ou a base de estoque está vazia.
               </p>
             </div>
             <button
               type="button"
               (click)="clearFilters()"
-              class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors"
+              class="px-4 py-2 rounded-lg bg-brand hover:bg-brand-hover text-white text-xs font-medium transition-colors"
             >
               Restaurar Filtros de Busca
             </button>
           </div>
         }
 
-        <!-- 4. SUCCESS / DATA STATE (Virtual Scroll Viewport @angular/cdk) -->
+        <!-- 4. SUCCESS / DATA STATE — CDK Virtual Scroll Viewport -->
         @else {
           <div class="flex flex-col space-y-2">
             <!-- Table Header -->
-            <div class="grid grid-cols-12 gap-4 px-4 py-3 border-b border-slate-800 text-slate-400 uppercase font-semibold tracking-wider text-[11px]">
+            <div class="grid grid-cols-12 gap-4 px-4 py-3 border-b border-border-subtle text-content-muted uppercase font-semibold tracking-wider text-[11px]">
               <div class="col-span-2">SKU</div>
               <div class="col-span-3">Produto</div>
               <div class="col-span-2">Categoria</div>
@@ -235,42 +241,43 @@ import type {
               <div class="col-span-1 text-center">Ações</div>
             </div>
 
-            <!-- Virtual Scroll Viewport for high-density rendering -->
+            <!-- Virtual Scroll Viewport — itemSize=48 matches h-12 (3rem) row height -->
             <cdk-virtual-scroll-viewport
-              itemSize="52"
-              class="h-[440px] w-full custom-scrollbar"
+              itemSize="48"
+              class="h-[600px] w-full overflow-y-auto"
+              style="contain: strict;"
             >
               <div
                 *cdkVirtualFor="let item of inventoryStore.items(); trackBy: trackByItemId"
-                class="grid grid-cols-12 gap-4 px-4 py-3 border-b border-slate-800/60 hover:bg-slate-800/40 text-xs items-center transition-colors"
+                class="grid grid-cols-12 gap-4 px-4 py-2 h-12 border-b border-border-subtle/60 hover:bg-canvas-elevated text-xs items-center transition-colors"
               >
-                <!-- SKU -->
-                <div class="col-span-2 font-mono font-medium text-indigo-400 truncate">
+                <!-- SKU — monospaced per spec -->
+                <div class="col-span-2 font-mono font-medium text-brand truncate" [title]="item.sku">
                   {{ item.sku }}
                 </div>
 
                 <!-- Product Name -->
-                <div class="col-span-3 font-medium text-slate-100 truncate" [title]="item.name">
+                <div class="col-span-3 font-medium text-content-primary truncate" [title]="item.name">
                   {{ item.name }}
                 </div>
 
                 <!-- Category -->
-                <div class="col-span-2 text-slate-400 truncate">
+                <div class="col-span-2 text-content-muted truncate">
                   {{ item.category }}
                 </div>
 
-                <!-- Quantity -->
-                <div class="col-span-1 text-right font-medium text-slate-200">
+                <!-- Quantity — monospaced per spec -->
+                <div class="col-span-1 text-right font-mono font-medium text-content-primary">
                   {{ item.quantity }}
                 </div>
 
-                <!-- Price -->
-                <div class="col-span-2 text-right text-slate-300 font-mono">
+                <!-- Unit Price — monospaced per spec -->
+                <div class="col-span-2 text-right font-mono text-content-muted">
                   R$ {{ item.unitPrice | number:'1.2-2':'pt-BR' }}
                 </div>
 
-                <!-- Status -->
-                <div class="col-span-1 text-center">
+                <!-- Status Badge -->
+                <div class="col-span-1 flex justify-center">
                   @switch (item.status) {
                     @case ('IN_STOCK') {
                       <app-badge variant="SUCCESS" label="EM ESTOQUE" />
@@ -289,8 +296,8 @@ import type {
                   <button
                     type="button"
                     (click)="openModalForEdit(item)"
-                    class="p-1 rounded text-slate-400 hover:text-indigo-400 hover:bg-slate-800 transition-colors"
-                    title="Editar item"
+                    class="p-1 rounded text-content-muted hover:text-brand hover:bg-brand-subtle transition-colors focus-visible:ring-2 focus-visible:ring-brand"
+                    [title]="'Editar ' + item.name"
                   >
                     <lucide-icon [img]="Edit2Icon" [size]="15" />
                   </button>
@@ -298,8 +305,8 @@ import type {
                   <button
                     type="button"
                     (click)="deleteItem(item)"
-                    class="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition-colors"
-                    title="Remover item"
+                    class="p-1 rounded text-content-muted hover:text-state-danger hover:bg-state-danger-subtle transition-colors focus-visible:ring-2 focus-visible:ring-state-danger"
+                    [title]="'Remover ' + item.name"
                   >
                     <lucide-icon [img]="Trash2Icon" [size]="15" />
                   </button>
@@ -307,10 +314,10 @@ import type {
               </div>
             </cdk-virtual-scroll-viewport>
 
-            <!-- Table Footer Stats -->
-            <div class="flex items-center justify-between pt-3 text-xs text-slate-400 border-t border-slate-800/80 px-2">
+            <!-- Table Footer -->
+            <div class="flex items-center justify-between pt-3 text-xs text-content-muted border-t border-border-subtle px-2">
               <span>Exibindo {{ inventoryStore.items().length }} de {{ inventoryStore.totalItems() }} produtos</span>
-              <span class="font-mono text-[11px] text-slate-500">Virtual Scroll CDK Activo • 60 FPS</span>
+              <span class="font-mono text-[11px] text-content-disabled">Virtual Scroll CDK • 60 FPS</span>
             </div>
           </div>
         }
@@ -350,6 +357,7 @@ export class InventoryComponent implements OnInit {
   protected readonly isModalOpen = signal(false);
   protected readonly selectedItemForEdit = signal<InventoryItem | null>(null);
 
+  /** Debounce pipeline — dispatches search only after 300ms idle, skipping duplicates */
   private readonly searchSubject = new Subject<string>();
 
   ngOnInit(): void {

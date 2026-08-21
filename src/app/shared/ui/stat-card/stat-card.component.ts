@@ -16,25 +16,25 @@ export interface StatTrend {
   imports: [CommonModule, LucideAngularModule],
   template: `
     <div
-      class="p-5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm hover:shadow-md transition-all duration-200"
+      class="p-4 rounded-xl border border-border-subtle bg-canvas-surface shadow-elevation-1 hover:shadow-elevation-2 transition-all duration-200"
     >
       <div class="flex items-center justify-between gap-4">
-        <span class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+        <span class="text-xs font-semibold uppercase tracking-wider text-content-muted">
           {{ title }}
         </span>
         @if (icon) {
-          <div class="p-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
+          <div class="p-2 rounded-lg bg-brand-subtle text-brand">
             <lucide-icon [img]="icon" [size]="18" />
           </div>
         } @else if (iconName) {
-          <div class="p-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
+          <div class="p-2 rounded-lg bg-brand-subtle text-brand">
             <lucide-icon [name]="iconName" [size]="18" />
           </div>
         }
       </div>
 
       <div class="mt-2 flex items-baseline justify-between gap-2">
-        <span class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+        <span class="text-2xl font-bold tracking-tight text-content-primary font-mono">
           {{ formattedValue }}
         </span>
 
@@ -43,8 +43,8 @@ export interface StatTrend {
             class="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full"
             [ngClass]="
               trend.isPositive
-                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                ? 'bg-state-success-subtle text-state-success'
+                : 'bg-state-danger-subtle text-state-danger'
             "
           >
             @if (trend.isPositive) {
@@ -59,7 +59,7 @@ export interface StatTrend {
       </div>
 
       @if (subtitle || (trend && trend.label)) {
-        <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+        <p class="mt-2 text-xs text-content-muted">
           {{ subtitle || trend?.label }}
         </p>
       }

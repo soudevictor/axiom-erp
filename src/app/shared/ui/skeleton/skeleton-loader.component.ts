@@ -8,10 +8,10 @@ export type SkeletonShape = 'rectangle' | 'circle' | 'text';
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div class="flex flex-col gap-2 w-full">
+    <div class="flex flex-col gap-2 w-full" aria-busy="true" aria-label="Carregando conteúdo">
       @for (item of items; track $index) {
         <div
-          class="animate-pulse bg-slate-200 dark:bg-slate-800 transition-all"
+          class="animate-pulse bg-canvas-elevated border border-border-subtle/60 transition-all"
           [ngClass]="shapeClasses"
           [style.width]="width"
           [style.height]="height"
@@ -24,7 +24,7 @@ export type SkeletonShape = 'rectangle' | 'circle' | 'text';
 })
 export class SkeletonLoaderComponent {
   @Input() width: string = '100%';
-  @Input() height: string = '1rem';
+  @Input() height: string = '3rem';
   @Input() shape: SkeletonShape = 'rectangle';
   @Input() count: number = 1;
 
@@ -40,7 +40,7 @@ export class SkeletonLoaderComponent {
         return 'rounded';
       case 'rectangle':
       default:
-        return 'rounded-md';
+        return 'rounded-lg';
     }
   }
 }

@@ -29,10 +29,10 @@ import { ToastService } from '@/shared/ui/toast/toast.service';
       <!-- Section Header -->
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 class="text-2xl font-bold text-slate-100 tracking-tight">
+          <h1 class="text-2xl font-bold text-content-primary tracking-tight">
             Visão Geral Executiva
           </h1>
-          <p class="text-xs text-slate-400 mt-1">
+          <p class="text-xs text-content-muted mt-1">
             Métricas estratégicas em tempo real da cadeia de suprimentos e tesouraria corporativa
           </p>
         </div>
@@ -42,7 +42,7 @@ import { ToastService } from '@/shared/ui/toast/toast.service';
           <button
             type="button"
             (click)="resetLocalDatabase()"
-            class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 text-xs font-medium transition-colors"
+            class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-canvas-surface border border-border-subtle hover:bg-canvas-elevated text-content-muted text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-brand"
             title="Limpar e repopular a base Dexie local com 500 registros"
           >
             <lucide-icon [img]="DatabaseIcon" [size]="14" />
@@ -54,16 +54,16 @@ import { ToastService } from '@/shared/ui/toast/toast.service';
       <!-- KPI StatCards Grid (with Skeletons for Loading State) -->
       @if (inventoryStore.loading() || treasuryStore.loading()) {
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" aria-live="polite">
-          <div class="p-5 rounded-xl border border-slate-800 bg-slate-900">
+          <div class="p-5 rounded-xl border border-border-subtle bg-canvas-surface">
             <app-skeleton-loader height="5rem" />
           </div>
-          <div class="p-5 rounded-xl border border-slate-800 bg-slate-900">
+          <div class="p-5 rounded-xl border border-border-subtle bg-canvas-surface">
             <app-skeleton-loader height="5rem" />
           </div>
-          <div class="p-5 rounded-xl border border-slate-800 bg-slate-900">
+          <div class="p-5 rounded-xl border border-border-subtle bg-canvas-surface">
             <app-skeleton-loader height="5rem" />
           </div>
-          <div class="p-5 rounded-xl border border-slate-800 bg-slate-900">
+          <div class="p-5 rounded-xl border border-border-subtle bg-canvas-surface">
             <app-skeleton-loader height="5rem" />
           </div>
         </div>
@@ -107,65 +107,65 @@ import { ToastService } from '@/shared/ui/toast/toast.service';
       @defer (on viewport) {
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <!-- Main Chart Container -->
-          <div class="lg:col-span-2 p-6 rounded-xl border border-slate-800 bg-slate-900/60 backdrop-blur-md space-y-4">
+          <div class="lg:col-span-2 p-6 rounded-xl border border-border-subtle bg-canvas-surface backdrop-blur-md space-y-4">
             <div class="flex items-center justify-between">
               <div>
-                <h3 class="text-sm font-semibold text-slate-200">
+                <h3 class="text-sm font-semibold text-content-primary">
                   Fluxo de Caixa vs. Giro de Inventário (Últimos 6 meses)
                 </h3>
-                <p class="text-xs text-slate-400">Projeção unificada de faturamento e abastecimento</p>
+                <p class="text-xs text-content-muted">Projeção unificada de faturamento e abastecimento</p>
               </div>
-              <span class="text-xs text-indigo-400 font-mono">Simulação em Tempo Real</span>
+              <span class="text-xs text-brand-secondary font-mono">Simulação em Tempo Real</span>
             </div>
 
             <!-- SVG Animated Chart Representation -->
-            <div class="h-64 flex flex-col justify-end p-4 rounded-lg bg-slate-950/60 border border-slate-800/80 space-y-4">
-              <div class="flex items-end justify-between h-48 gap-3 px-4 pt-4 border-b border-slate-800">
-                <div class="flex-1 bg-indigo-500/20 hover:bg-indigo-500/30 rounded-t h-[45%] transition-all relative group">
-                  <div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 border border-slate-800 text-[10px] px-2 py-1 rounded text-indigo-400 font-mono">
+            <div class="h-64 flex flex-col justify-end p-4 rounded-lg bg-canvas-base border border-border-subtle space-y-4">
+              <div class="flex items-end justify-between h-48 gap-3 px-4 pt-4 border-b border-border-subtle">
+                <div class="flex-1 bg-brand/20 hover:bg-brand/30 rounded-t h-[45%] transition-all relative group">
+                  <div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-canvas-elevated border border-border-subtle text-[10px] px-2 py-1 rounded text-brand font-mono">
                     R$ 420K
                   </div>
                 </div>
-                <div class="flex-1 bg-indigo-500/30 hover:bg-indigo-500/40 rounded-t h-[60%] transition-all relative group">
-                  <div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 border border-slate-800 text-[10px] px-2 py-1 rounded text-indigo-400 font-mono">
+                <div class="flex-1 bg-brand/30 hover:bg-brand/40 rounded-t h-[60%] transition-all relative group">
+                  <div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-canvas-elevated border border-border-subtle text-[10px] px-2 py-1 rounded text-brand font-mono">
                     R$ 580K
                   </div>
                 </div>
-                <div class="flex-1 bg-indigo-500/40 hover:bg-indigo-500/50 rounded-t h-[75%] transition-all relative group">
-                  <div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 border border-slate-800 text-[10px] px-2 py-1 rounded text-indigo-400 font-mono">
+                <div class="flex-1 bg-brand/40 hover:bg-brand/50 rounded-t h-[75%] transition-all relative group">
+                  <div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-canvas-elevated border border-border-subtle text-[10px] px-2 py-1 rounded text-brand font-mono">
                     R$ 790K
                   </div>
                 </div>
-                <div class="flex-1 bg-emerald-500/40 hover:bg-emerald-500/50 rounded-t h-[85%] transition-all relative group">
-                  <div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 border border-slate-800 text-[10px] px-2 py-1 rounded text-emerald-400 font-mono">
+                <div class="flex-1 bg-state-success/40 hover:bg-state-success/50 rounded-t h-[85%] transition-all relative group">
+                  <div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-canvas-elevated border border-border-subtle text-[10px] px-2 py-1 rounded text-state-success font-mono">
                     R$ 950K
                   </div>
                 </div>
-                <div class="flex-1 bg-emerald-500/50 hover:bg-emerald-500/60 rounded-t h-[70%] transition-all relative group">
-                  <div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 border border-slate-800 text-[10px] px-2 py-1 rounded text-emerald-400 font-mono">
+                <div class="flex-1 bg-state-success/50 hover:bg-state-success/60 rounded-t h-[70%] transition-all relative group">
+                  <div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-canvas-elevated border border-border-subtle text-[10px] px-2 py-1 rounded text-state-success font-mono">
                     R$ 820K
                   </div>
                 </div>
-                <div class="flex-1 bg-gradient-to-t from-indigo-600 to-emerald-500 rounded-t h-[95%] transition-all relative group">
-                  <div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 border border-slate-800 text-[10px] px-2 py-1 rounded text-emerald-400 font-mono font-bold">
+                <div class="flex-1 bg-gradient-to-t from-brand to-state-success rounded-t h-[95%] transition-all relative group">
+                  <div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-canvas-elevated border border-border-subtle text-[10px] px-2 py-1 rounded text-state-success font-mono font-bold">
                     R$ 1.25M
                   </div>
                 </div>
               </div>
-              <div class="flex justify-between text-[11px] text-slate-500 px-4 font-mono">
+              <div class="flex justify-between text-[11px] text-content-disabled px-4 font-mono">
                 <span>MAR</span>
                 <span>ABR</span>
                 <span>MAI</span>
                 <span>JUN</span>
                 <span>JUL</span>
-                <span class="text-indigo-400 font-bold">AGO (ATUAL)</span>
+                <span class="text-brand font-bold">AGO (ATUAL)</span>
               </div>
             </div>
           </div>
 
           <!-- System Alerts Container -->
-          <div class="p-6 rounded-xl border border-slate-800 bg-slate-900/60 backdrop-blur-md space-y-4">
-            <h3 class="text-sm font-semibold text-slate-200">
+          <div class="p-6 rounded-xl border border-border-subtle bg-canvas-surface backdrop-blur-md space-y-4">
+            <h3 class="text-sm font-semibold text-content-primary">
               Alertas & Notificações Ativas
             </h3>
             <div class="space-y-3">
@@ -192,7 +192,7 @@ import { ToastService } from '@/shared/ui/toast/toast.service';
           </div>
         </div>
       } @placeholder {
-        <div class="p-6 rounded-xl border border-slate-800 bg-slate-900">
+        <div class="p-6 rounded-xl border border-border-subtle bg-canvas-surface">
           <app-skeleton-loader height="16rem" />
         </div>
       }

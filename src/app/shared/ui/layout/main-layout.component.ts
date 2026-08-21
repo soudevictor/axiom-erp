@@ -16,7 +16,7 @@ import { ToastComponent } from '../toast/toast.component';
     ToastComponent,
   ],
   template: `
-    <div class="flex h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 antialiased">
+    <div class="flex h-screen w-screen overflow-hidden bg-canvas-base text-content-primary antialiased">
       <!-- Sidebar -->
       <app-sidebar />
 
@@ -27,8 +27,9 @@ import { ToastComponent } from '../toast/toast.component';
 
         <!-- Main Viewport -->
         <main
-          class="flex-1 overflow-y-auto p-6 md:p-8 bg-gradient-to-b from-slate-950 to-slate-900"
+          class="flex-1 overflow-y-auto p-6 md:p-8 bg-canvas-base"
           id="main-content"
+          tabindex="-1"
         >
           <div class="max-w-7xl mx-auto space-y-6">
             <router-outlet />

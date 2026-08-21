@@ -25,7 +25,7 @@ describe('StatCardComponent', () => {
     expect(compiled.textContent).toContain('1.500.250');
   });
 
-  it('deve exibir variação positiva com classe emerald quando isPositive é true', () => {
+  it('deve exibir variação positiva com classe state-success-subtle quando isPositive é true', () => {
     component.title = 'Vendas';
     component.value = 'R$ 100,00';
     component.trend = { value: 15.5, isPositive: true, label: 'mês anterior' };
@@ -34,11 +34,12 @@ describe('StatCardComponent', () => {
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.textContent).toContain('+15.5%');
 
-    const badgeEl = compiled.querySelector('.bg-emerald-500\\/10');
+    // Semantic token class applied by ngClass for positive trend
+    const badgeEl = compiled.querySelector('.bg-state-success-subtle');
     expect(badgeEl).not.toBeNull();
   });
 
-  it('deve exibir variação negativa com classe rose quando isPositive é false', () => {
+  it('deve exibir variação negativa com classe state-danger-subtle quando isPositive é false', () => {
     component.title = 'Custos';
     component.value = 'R$ 50,00';
     component.trend = { value: 3.2, isPositive: false, label: 'aumento de despesa' };
@@ -47,7 +48,8 @@ describe('StatCardComponent', () => {
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.textContent).toContain('-3.2%');
 
-    const badgeEl = compiled.querySelector('.bg-rose-500\\/10');
+    // Semantic token class applied by ngClass for negative trend
+    const badgeEl = compiled.querySelector('.bg-state-danger-subtle');
     expect(badgeEl).not.toBeNull();
   });
 

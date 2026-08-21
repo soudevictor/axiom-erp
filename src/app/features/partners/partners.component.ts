@@ -81,17 +81,17 @@ const MOCK_PARTNERS: readonly B2BPartner[] = [
       <!-- Section Header -->
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 class="text-2xl font-bold text-slate-100 tracking-tight">
+          <h1 class="text-2xl font-bold text-content-primary tracking-tight">
             Gestão de Parceiros B2B & Homologação
           </h1>
-          <p class="text-xs text-slate-400 mt-1">
+          <p class="text-xs text-content-muted mt-1">
             Cadastro unificado de fornecedores, distribuidores, compliance e limites de crédito
           </p>
         </div>
 
         <button
           type="button"
-          class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs shadow-lg shadow-indigo-600/20 transition-colors self-start sm:self-auto"
+          class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand hover:bg-brand-hover text-white font-medium text-xs shadow-brand-glow transition-colors self-start sm:self-auto focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-canvas-base"
         >
           <lucide-icon [img]="PlusIcon" [size]="16" />
           <span>Cadastrar Parceiro</span>
@@ -123,29 +123,30 @@ const MOCK_PARTNERS: readonly B2BPartner[] = [
       </div>
 
       <!-- Filter Bar -->
-      <div class="p-4 rounded-xl border border-slate-800 bg-slate-900/60 backdrop-blur-md flex items-center justify-between gap-4">
+      <div class="p-4 rounded-xl border border-border-subtle bg-canvas-surface backdrop-blur-md flex items-center justify-between gap-4">
         <div class="relative flex-1 max-w-md">
-          <lucide-icon [img]="SearchIcon" [size]="16" class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+          <lucide-icon [img]="SearchIcon" [size]="16" class="absolute left-3 top-1/2 -translate-y-1/2 text-content-disabled" />
           <input
             type="search"
             [ngModel]="searchQuery()"
             (ngModelChange)="searchQuery.set($event)"
             placeholder="Buscar por CNPJ ou Razão Social..."
-            class="w-full pl-9 pr-4 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+            class="w-full pl-9 pr-4 py-2 rounded-lg bg-canvas-elevated border border-border-subtle text-xs text-content-primary placeholder-content-disabled focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors"
+            aria-label="Buscar parceiros por CNPJ ou razão social"
           />
         </div>
 
-        <div class="text-xs text-slate-400 font-mono">
+        <div class="text-xs text-content-muted font-mono">
           {{ filteredPartners.length }} parceiros filtrados
         </div>
       </div>
 
       <!-- Partners Table -->
-      <div class="p-6 rounded-xl border border-slate-800 bg-slate-900/60 backdrop-blur-md">
+      <div class="p-6 rounded-xl border border-border-subtle bg-canvas-surface backdrop-blur-md">
         <div class="overflow-x-auto">
           <table class="w-full text-left text-xs border-collapse">
             <thead>
-              <tr class="border-b border-slate-800 text-slate-400 uppercase font-semibold tracking-wider">
+              <tr class="border-b border-border-subtle text-content-muted uppercase font-semibold tracking-wider">
                 <th class="py-3 px-4">CNPJ</th>
                 <th class="py-3 px-4">Razão Social</th>
                 <th class="py-3 px-4">UF</th>
@@ -154,14 +155,14 @@ const MOCK_PARTNERS: readonly B2BPartner[] = [
                 <th class="py-3 px-4 text-center">Homologação</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-slate-800/60 text-slate-300">
+            <tbody class="divide-y divide-border-subtle/60 text-content-primary">
               @for (partner of filteredPartners; track partner.id) {
-                <tr class="hover:bg-slate-800/40 transition-colors">
-                  <td class="py-3 px-4 font-mono text-indigo-400 font-medium">{{ partner.cnpj }}</td>
-                  <td class="py-3 px-4 font-medium text-slate-100">{{ partner.companyName }}</td>
-                  <td class="py-3 px-4 text-slate-400 font-mono">{{ partner.state }}</td>
-                  <td class="py-3 px-4 text-slate-400">{{ partner.category }}</td>
-                  <td class="py-3 px-4 text-right font-mono font-medium">
+                <tr class="hover:bg-canvas-elevated transition-colors">
+                  <td class="py-3 px-4 font-mono text-brand-secondary font-medium">{{ partner.cnpj }}</td>
+                  <td class="py-3 px-4 font-medium text-content-primary">{{ partner.companyName }}</td>
+                  <td class="py-3 px-4 text-content-muted font-mono">{{ partner.state }}</td>
+                  <td class="py-3 px-4 text-content-muted">{{ partner.category }}</td>
+                  <td class="py-3 px-4 text-right font-mono font-medium text-content-primary">
                     R$ {{ partner.creditLimit | number:'1.2-2':'pt-BR' }}
                   </td>
                   <td class="py-3 px-4 text-center">
