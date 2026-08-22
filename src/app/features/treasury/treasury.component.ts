@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   inject,
   OnInit,
   signal,
@@ -22,6 +23,9 @@ import {
   AlertCircle,
   FileSpreadsheet,
   Search,
+  CalendarClock,
+  AlertTriangle,
+  TrendingUp,
 } from 'lucide-angular';
 
 import { TreasuryStore } from './data-access/treasury.store';
@@ -30,11 +34,20 @@ import { BadgeComponent } from '@/shared/ui/badge/badge.component';
 import { SkeletonLoaderComponent } from '@/shared/ui/skeleton/skeleton-loader.component';
 import { ToastService } from '@/shared/ui/toast/toast.service';
 import type {
-  TransactionCategory,
   TransactionStatus,
   TransactionType,
   TreasuryTransaction,
 } from '@/core/models/treasury.model';
+
+interface AgingBucket {
+  readonly label: string;
+  readonly description: string;
+  readonly colorClass: string;
+  readonly bgClass: string;
+  readonly borderClass: string;
+  readonly transactions: readonly TreasuryTransaction[];
+  readonly total: number;
+}
 
 @Component({
   selector: 'app-treasury',
@@ -113,6 +126,71 @@ import type {
           iconName="ArrowDownRight"
         />
       </div>
+
+      <!-- ═══════════════ AGING LIST PANEL ═══════════════ -->
+      @defer (on viewport) {
+        <section aria-labelledby="aging-title">
+          <div class="flex items-center gap-3 mb-4">
+            <lucide-icon [img]="CalendarClockIcon" [size]="18" class="text-brand" />
+            <h2 id="aging-title" class="text-sm font-bold text-content-primary tracking-tight uppercase">
+              Aging List — Análise de Vencimento de Contas Pendentes
+            </h2>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            @for (bucket of agingBuckets(); track bucket.label) {
+              <div
+                class="p-4 rounded-xl border backdrop-blur-md space-y-3"
+                [ngClass]="[bucket.bgClass, bucket.borderClass]"
+              >
+                <!-- Bucket Header -->
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-bold uppercase tracking-widest" [ngClass]="bucket.colorClass">
+                    {{ bucket.label }}
+                  </span>
+                  <span
+                    class="text-[10px] font-mono px-2 py-0.5 rounded-full border"
+                    [ngClass]="[bucket.colorClass, bucket.borderClass]"
+                  >
+                    {{ bucket.transactions.length }} item(s)
+                  </span>
+                </div>
+
+                <!-- Description -->
+                <p class="text-[11px] text-content-muted">{{ bucket.description }}</p>
+
+                <!-- Total Amount -->
+                <div class="text-lg font-bold font-mono tabular-nums" [ngClass]="bucket.colorClass">
+                  R$ {{ bucket.total | number:'1.2-2':'pt-BR' }}
+                </div>
+
+                <!-- Transaction Pills (top 3) -->
+                @if (bucket.transactions.length > 0) {
+                  <div class="space-y-1.5 pt-2 border-t" [ngClass]="bucket.borderClass">
+                    @for (tx of bucket.transactions.slice(0, 3); track tx.id) {
+                      <div class="flex items-center justify-between gap-2 text-[11px]">
+                        <span class="truncate text-content-muted" [title]="tx.description">
+                          {{ tx.description }}
+                        </span>
+                        <span class="font-mono shrink-0" [ngClass]="bucket.colorClass">
+                          R$ {{ tx.amount | number:'1.0-0':'pt-BR' }}
+                        </span>
+                      </div>
+                    }
+                    @if (bucket.transactions.length > 3) {
+                      <p class="text-[10px] text-content-disabled text-right">
+                        +{{ bucket.transactions.length - 3 }} mais…
+                      </p>
+                    }
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        </section>
+      } @placeholder {
+        <div class="h-32 rounded-xl border border-border-subtle bg-canvas-surface animate-pulse" aria-hidden="true"></div>
+      }
 
       <!-- Filter Controls Bar -->
       <div class="p-4 rounded-xl border border-border-subtle bg-canvas-surface backdrop-blur-md flex flex-wrap items-center justify-between gap-4">
@@ -332,10 +410,87 @@ export class TreasuryComponent implements OnInit {
   protected readonly RefreshCwIcon = RefreshCw;
   protected readonly AlertCircleIcon = AlertCircle;
   protected readonly FileSpreadsheetIcon = FileSpreadsheet;
+  protected readonly CalendarClockIcon = CalendarClock;
+  protected readonly AlertTriangleIcon = AlertTriangle;
+  protected readonly TrendingUpIcon = TrendingUp;
 
   protected readonly searchQuery = signal('');
   protected readonly selectedType = signal<TransactionType | 'ALL'>('ALL');
   protected readonly selectedStatus = signal<TransactionStatus | 'ALL'>('ALL');
+
+  /**
+   * Computed Aging List buckets based on ALL transactions (not just filtered view).
+   * Only PENDING transactions are included in aging analysis.
+   */
+  protected readonly agingBuckets = computed<readonly AgingBucket[]>(() => {
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+
+    const pending = this.treasuryStore.transactions().filter((t) => t.status === 'PENDING');
+
+    const today: TreasuryTransaction[] = [];
+    const next7: TreasuryTransaction[] = [];
+    const next30: TreasuryTransaction[] = [];
+    const overdue: TreasuryTransaction[] = [];
+
+    for (const tx of pending) {
+      const due = new Date(tx.dueDate);
+      due.setHours(0, 0, 0, 0);
+      const diffDays = Math.round((due.getTime() - now.getTime()) / 86_400_000);
+
+      if (diffDays < 0) {
+        overdue.push(tx);
+      } else if (diffDays === 0) {
+        today.push(tx);
+      } else if (diffDays <= 7) {
+        next7.push(tx);
+      } else if (diffDays <= 30) {
+        next30.push(tx);
+      }
+    }
+
+    const sum = (arr: TreasuryTransaction[]): number =>
+      arr.reduce((acc, t) => acc + t.amount, 0);
+
+    return [
+      {
+        label: 'Vencidas',
+        description: 'Contas com vencimento já ultrapassado',
+        colorClass: 'text-state-danger',
+        bgClass: 'bg-state-danger-subtle',
+        borderClass: 'border-state-danger/25',
+        transactions: overdue,
+        total: sum(overdue),
+      },
+      {
+        label: 'Hoje',
+        description: 'Vencimento no dia de hoje',
+        colorClass: 'text-state-warning',
+        bgClass: 'bg-state-warning-subtle',
+        borderClass: 'border-state-warning/25',
+        transactions: today,
+        total: sum(today),
+      },
+      {
+        label: 'Próximos 7 dias',
+        description: 'Vencimento nos próximos 7 dias',
+        colorClass: 'text-state-info',
+        bgClass: 'bg-state-info-subtle',
+        borderClass: 'border-state-info/25',
+        transactions: next7,
+        total: sum(next7),
+      },
+      {
+        label: 'Próximos 30 dias',
+        description: 'Vencimento nos próximos 8 a 30 dias',
+        colorClass: 'text-state-success',
+        bgClass: 'bg-state-success-subtle',
+        borderClass: 'border-state-success/25',
+        transactions: next30,
+        total: sum(next30),
+      },
+    ] as const;
+  });
 
   ngOnInit(): void {
     if (this.treasuryStore.transactions().length === 0) {

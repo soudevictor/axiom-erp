@@ -4,22 +4,28 @@ import {
   HttpResponse,
   type HttpInterceptorFn,
 } from '@angular/common/http';
+import { inject } from '@angular/core';
 import { delay, Observable, of, switchMap, throwError } from 'rxjs';
 import { db } from '@/core/database/app-database';
 import type { InventoryItem } from '@/core/models/inventory.model';
 import type { TreasuryTransaction } from '@/core/models/treasury.model';
 import type { PaginatedResponse } from '@/core/models/pagination.model';
+import { DevResilienceService } from './dev-resilience.service';
 
 const INVENTORY_PREFIX = '/api/v1/inventory';
 const TREASURY_PREFIX = '/api/v1/treasury';
 const SIMULATE_ERROR_HEADER = 'X-Simulate-Error';
 
-function getSimulatedLatency(): number {
-  return Math.floor(Math.random() * (500 - 200 + 1)) + 200;
+function getSimulatedLatency(slowLatency: boolean): number {
+  const base = Math.floor(Math.random() * (500 - 200 + 1)) + 200;
+  return slowLatency ? base + 2000 : base;
 }
 
-function shouldSimulateError(headers: { get(name: string): string | null }): boolean {
-  return headers.get(SIMULATE_ERROR_HEADER) === 'true';
+function shouldSimulateError(
+  headers: { get(name: string): string | null },
+  serviceFlag: boolean
+): boolean {
+  return serviceFlag || headers.get(SIMULATE_ERROR_HEADER) === 'true';
 }
 
 function createErrorResponse(url: string): HttpErrorResponse {
@@ -290,9 +296,10 @@ export const mockApiInterceptor: HttpInterceptorFn = (req, next) => {
     return next(req);
   }
 
-  const simulatedDelay = getSimulatedLatency();
+  const devResilience = inject(DevResilienceService);
+  const simulatedDelay = getSimulatedLatency(devResilience.slowLatency());
 
-  if (shouldSimulateError(req.headers)) {
+  if (shouldSimulateError(req.headers, devResilience.simulateError())) {
     return of(null).pipe(
       delay(simulatedDelay),
       switchMap(() => throwError(() => createErrorResponse(req.url)))

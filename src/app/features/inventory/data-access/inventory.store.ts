@@ -28,6 +28,8 @@ interface InventoryState {
     lowStockCount: number;
     totalStockValue: number;
   } | null;
+  /** IDs currently selected for bulk actions */
+  selectedIds: readonly string[];
 }
 
 const initialState: InventoryState = {
@@ -37,6 +39,7 @@ const initialState: InventoryState = {
   error: null,
   filters: DEFAULT_INVENTORY_FILTER,
   summaryStats: null,
+  selectedIds: [],
 };
 
 function buildHttpParams(filters: InventoryFilter): HttpParams {
@@ -96,6 +99,16 @@ export const InventoryStore = signalStore(
         filters.status !== null
       );
     }),
+
+    /** Whether ALL visible items are selected */
+    isAllSelected: computed(() => {
+      const items = store.items();
+      const selected = store.selectedIds();
+      return items.length > 0 && items.every((i) => selected.includes(i.id));
+    }),
+
+    /** Number of currently selected items */
+    selectionCount: computed(() => store.selectedIds().length),
   })),
 
   withMethods((store) => {
@@ -123,6 +136,7 @@ export const InventoryStore = signalStore(
             totalItems: response.totalItems,
             loading: false,
             summaryStats,
+            selectedIds: [],
           });
         } catch (err: unknown) {
           const message =
@@ -171,6 +185,42 @@ export const InventoryStore = signalStore(
         }
       },
 
+      /**
+       * Optimistic delete: removes the item from UI immediately,
+       * then performs the actual HTTP request.
+       * Returns the removed item so the caller can restore it on undo.
+       */
+      optimisticDeleteItem(id: string): InventoryItem | undefined {
+        const item = store.items().find((i) => i.id === id);
+        if (!item) return undefined;
+
+        // Immediately remove from the UI
+        patchState(store, {
+          items: store.items().filter((i) => i.id !== id),
+          totalItems: store.totalItems() - 1,
+          selectedIds: store.selectedIds().filter((sid) => sid !== id),
+        });
+
+        // Fire-and-forget the HTTP call; errors are logged to console
+        firstValueFrom(http.delete(`${API_URL}/${id}`)).catch((err: unknown) => {
+          console.error('Falha ao remover item na API:', err);
+        });
+
+        return item;
+      },
+
+      /** Restores a previously deleted item (undo operation). */
+      restoreItem(item: InventoryItem): void {
+        patchState(store, {
+          items: [item, ...store.items()],
+          totalItems: store.totalItems() + 1,
+        });
+        // Re-add to the database via POST
+        firstValueFrom(http.post<InventoryItem>(API_URL, item)).catch((err: unknown) => {
+          console.error('Falha ao restaurar item na API:', err);
+        });
+      },
+
       async deleteItem(id: string): Promise<void> {
         patchState(store, { loading: true, error: null });
 
@@ -186,8 +236,59 @@ export const InventoryStore = signalStore(
         }
       },
 
+      /** Deletes all currently selected items (bulk delete). */
+      async bulkDeleteSelected(): Promise<void> {
+        const ids = [...store.selectedIds()];
+        if (ids.length === 0) return;
+
+        patchState(store, {
+          items: store.items().filter((i) => !ids.includes(i.id)),
+          totalItems: store.totalItems() - ids.length,
+          selectedIds: [],
+        });
+
+        await Promise.all(
+          ids.map((id) =>
+            firstValueFrom(http.delete(`${API_URL}/${id}`)).catch((err: unknown) => {
+              console.error(`Falha ao remover item ${id}:`, err);
+            })
+          )
+        );
+      },
+
       resetFilters(): void {
         patchState(store, { filters: DEFAULT_INVENTORY_FILTER });
+      },
+
+      // ─── Sorting ──────────────────────────────────────────────
+
+      setSortBy(column: keyof InventoryItem): void {
+        const current = store.filters();
+        const newOrder =
+          current.sortBy === column && current.sortOrder === 'asc' ? 'desc' : 'asc';
+        patchState(store, {
+          filters: { ...current, sortBy: column, sortOrder: newOrder, page: 1 },
+        });
+      },
+
+      // ─── Bulk Selection ────────────────────────────────────────
+
+      toggleSelect(id: string): void {
+        const current = store.selectedIds();
+        const updated = current.includes(id)
+          ? current.filter((sid) => sid !== id)
+          : [...current, id];
+        patchState(store, { selectedIds: updated });
+      },
+
+      selectAll(): void {
+        const allIds = store.items().map((i) => i.id);
+        const isAllSelected = allIds.every((id) => store.selectedIds().includes(id));
+        patchState(store, { selectedIds: isAllSelected ? [] : allIds });
+      },
+
+      clearSelection(): void {
+        patchState(store, { selectedIds: [] });
       },
     };
   }),
