@@ -5,63 +5,83 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        primary: {
-          50: 'hsl(220, 60%, 97%)',
-          100: 'hsl(220, 55%, 93%)',
-          200: 'hsl(220, 55%, 85%)',
-          300: 'hsl(220, 55%, 72%)',
-          400: 'hsl(220, 55%, 58%)',
-          500: 'hsl(220, 60%, 48%)',
-          600: 'hsl(220, 65%, 40%)',
-          700: 'hsl(220, 65%, 32%)',
-          800: 'hsl(220, 60%, 26%)',
-          900: 'hsl(220, 55%, 20%)',
-          950: 'hsl(220, 55%, 12%)',
+        // ── Brand (Cobalto Elétrico) ─────────────────────────────────────────
+        brand: {
+          DEFAULT: '#2563eb',
+          hover: '#3b82f6',
+          active: '#1d4ed8',
+          subtle: 'rgba(37, 99, 235, 0.12)',
+          secondary: '#38bdf8',
         },
-        surface: {
-          50: 'hsl(220, 20%, 98%)',
-          100: 'hsl(220, 18%, 96%)',
-          200: 'hsl(220, 15%, 91%)',
-          300: 'hsl(220, 12%, 82%)',
-          400: 'hsl(220, 10%, 62%)',
-          500: 'hsl(220, 8%, 46%)',
-          600: 'hsl(220, 10%, 36%)',
-          700: 'hsl(220, 12%, 26%)',
-          800: 'hsl(220, 15%, 18%)',
-          900: 'hsl(220, 18%, 12%)',
-          950: 'hsl(220, 20%, 7%)',
+
+        // ── Canvas & Surfaces (Dark Corporativo) ──────────────────────────────
+        canvas: {
+          DEFAULT: '#09090b',
+          base: '#09090b',
+          surface: '#11141b',
+          elevated: '#181d27',
         },
-        success: {
-          400: 'hsl(152, 60%, 50%)',
-          500: 'hsl(152, 65%, 40%)',
-          600: 'hsl(152, 68%, 32%)',
+
+        // ── Borders & Dividers ────────────────────────────────────────────────
+        border: {
+          subtle: '#222734',
+          strong: '#333b4f',
+          hover: '#2563eb',
         },
-        warning: {
-          400: 'hsl(38, 95%, 60%)',
-          500: 'hsl(38, 92%, 50%)',
-          600: 'hsl(38, 88%, 42%)',
+
+        // ── Typography & Content ──────────────────────────────────────────────
+        content: {
+          primary: '#f8fafc',
+          muted: '#94a3b8',
+          disabled: '#475569',
         },
-        danger: {
-          400: 'hsl(0, 72%, 60%)',
-          500: 'hsl(0, 72%, 51%)',
-          600: 'hsl(0, 72%, 42%)',
+
+        // ── Semantic Operational States ───────────────────────────────────────
+        state: {
+          success: '#10b981',
+          'success-subtle': 'rgba(16, 185, 129, 0.12)',
+          warning: '#f59e0b',
+          'warning-subtle': 'rgba(245, 158, 11, 0.12)',
+          danger: '#ef4444',
+          'danger-subtle': 'rgba(239, 68, 68, 0.12)',
+          info: '#0284c7',
+          'info-subtle': 'rgba(2, 132, 199, 0.12)',
         },
       },
+
+      // ── Font Families ────────────────────────────────────────────────────────
       fontFamily: {
         sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
         mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
       },
+
+      // ── Extended Font Sizes ───────────────────────────────────────────────────
       fontSize: {
         '2xs': ['0.625rem', { lineHeight: '0.875rem' }],
       },
+
+      // ── Spacing Scale (Strict 4px/8px Modular Grid) ────────────────────────
+      // Tailwind's default scale already follows 4px increments.
+      // Only additions needed for the 64px topbar height token (h-16 = 64px ✓)
+      // and 48px row height (h-12 = 48px ✓) — both already in default scale.
+
+      // ── Border Radius ─────────────────────────────────────────────────────────
       borderRadius: {
         DEFAULT: '0.5rem',
       },
+
+      // ── Box Shadows (elevation system) ───────────────────────────────────────
       boxShadow: {
-        'elevation-1': '0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.06)',
-        'elevation-2': '0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.06)',
-        'elevation-3': '0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.06)',
+        'elevation-1':
+          '0 1px 3px 0 rgb(0 0 0 / 0.12), 0 1px 2px -1px rgb(0 0 0 / 0.12)',
+        'elevation-2':
+          '0 4px 6px -1px rgb(0 0 0 / 0.18), 0 2px 4px -2px rgb(0 0 0 / 0.12)',
+        'elevation-3':
+          '0 10px 15px -3px rgb(0 0 0 / 0.2), 0 4px 6px -4px rgb(0 0 0 / 0.15)',
+        'brand-glow': '0 4px 24px 0 rgba(37, 99, 235, 0.28)',
       },
+
+      // ── Transition Timing ─────────────────────────────────────────────────────
       transitionTimingFunction: {
         smooth: 'cubic-bezier(0.4, 0, 0.2, 1)',
       },

@@ -1,5 +1,5 @@
-import 'zone.js';
-import 'zone.js/testing';
+import 'fake-indexeddb/auto';
+import '@analogjs/vitest-angular/setup-zone';
 import { TestBed } from '@angular/core/testing';
 import {
   BrowserDynamicTestingModule,
@@ -8,5 +8,6 @@ import {
 
 TestBed.initTestEnvironment(
   BrowserDynamicTestingModule,
-  platformBrowserDynamicTesting()
+  platformBrowserDynamicTesting(),
+  { teardown: { destroyAfterEach: true } }
 );
