@@ -72,9 +72,11 @@ import { ToastService } from '@/shared/ui/toast/toast.service';
           <app-stat-card
             title="Valor Total em Estoque"
             [value]="'R$ ' + (inventoryStore.totalStockValue() | number:'1.2-2':'pt-BR')"
+            [tooltipText]="'R$ ' + (inventoryStore.totalStockValue() | number:'1.2-2':'pt-BR')"
             [trend]="{ value: 12.4, isPositive: true, label: 'em relação ao mês anterior' }"
             iconName="Package"
             subtitle="Ativos em 5 armazéns"
+            valueClass="font-mono tabular-nums tracking-tight whitespace-nowrap truncate block"
           />
 
           <app-stat-card
@@ -83,22 +85,27 @@ import { ToastService } from '@/shared/ui/toast/toast.service';
             [trend]="{ value: 4.2, isPositive: false, label: 'exigem reposição urgente' }"
             iconName="AlertTriangle"
             subtitle="Abaixo do limite de segurança"
+            valueClass="font-mono tabular-nums tracking-tight whitespace-nowrap"
           />
 
           <app-stat-card
             title="Saldo Consolidado de Caixa"
             [value]="'R$ ' + (treasuryStore.totalBalance() | number:'1.2-2':'pt-BR')"
+            [tooltipText]="'R$ ' + (treasuryStore.totalBalance() | number:'1.2-2':'pt-BR')"
             [trend]="{ value: 8.7, isPositive: true, label: 'posição financeira' }"
             iconName="Wallet"
             subtitle="Tesouraria & Bancos"
+            valueClass="font-mono tabular-nums tracking-tight whitespace-nowrap truncate block"
           />
 
           <app-stat-card
             title="Contas a Receber"
             [value]="'R$ ' + (treasuryStore.totalReceivables() | number:'1.2-2':'pt-BR')"
+            [tooltipText]="'R$ ' + (treasuryStore.totalReceivables() | number:'1.2-2':'pt-BR')"
             [trend]="{ value: 2.1, isPositive: true, label: 'carteira adimplente' }"
             iconName="TrendingUp"
             subtitle="Previsão de entrada 30d"
+            valueClass="font-mono tabular-nums tracking-tight whitespace-nowrap truncate block"
           />
         </div>
       }
@@ -118,36 +125,42 @@ import { ToastService } from '@/shared/ui/toast/toast.service';
               <span class="text-xs text-brand-secondary font-mono">Simulação em Tempo Real</span>
             </div>
 
-            <!-- SVG Animated Chart Representation -->
+            <!-- SVG Animated Chart Representation (corporate cobalt palette, no neon gradients) -->
             <div class="h-64 flex flex-col justify-end p-4 rounded-lg bg-canvas-base border border-border-subtle space-y-4">
               <div class="flex items-end justify-between h-48 gap-3 px-4 pt-4 border-b border-border-subtle">
-                <div class="flex-1 bg-brand/20 hover:bg-brand/30 rounded-t h-[45%] transition-all relative group">
-                  <div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-canvas-elevated border border-border-subtle text-[10px] px-2 py-1 rounded text-brand font-mono">
+                <!-- Bar 1 -->
+                <div class="flex-1 bg-brand/40 hover:bg-brand/60 rounded-t h-[45%] transition-all duration-200 relative group">
+                  <div class="opacity-0 group-hover:opacity-100 absolute -top-9 left-1/2 -translate-x-1/2 backdrop-blur-md bg-canvas-elevated/90 border border-border-subtle text-[10px] px-2 py-1 rounded z-50 text-brand font-mono whitespace-nowrap">
                     R$ 420K
                   </div>
                 </div>
-                <div class="flex-1 bg-brand/30 hover:bg-brand/40 rounded-t h-[60%] transition-all relative group">
-                  <div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-canvas-elevated border border-border-subtle text-[10px] px-2 py-1 rounded text-brand font-mono">
+                <!-- Bar 2 -->
+                <div class="flex-1 bg-brand/50 hover:bg-brand/70 rounded-t h-[60%] transition-all duration-200 relative group">
+                  <div class="opacity-0 group-hover:opacity-100 absolute -top-9 left-1/2 -translate-x-1/2 backdrop-blur-md bg-canvas-elevated/90 border border-border-subtle text-[10px] px-2 py-1 rounded z-50 text-brand font-mono whitespace-nowrap">
                     R$ 580K
                   </div>
                 </div>
-                <div class="flex-1 bg-brand/40 hover:bg-brand/50 rounded-t h-[75%] transition-all relative group">
-                  <div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-canvas-elevated border border-border-subtle text-[10px] px-2 py-1 rounded text-brand font-mono">
+                <!-- Bar 3 -->
+                <div class="flex-1 bg-brand/60 hover:bg-brand/80 rounded-t h-[75%] transition-all duration-200 relative group">
+                  <div class="opacity-0 group-hover:opacity-100 absolute -top-9 left-1/2 -translate-x-1/2 backdrop-blur-md bg-canvas-elevated/90 border border-border-subtle text-[10px] px-2 py-1 rounded z-50 text-brand font-mono whitespace-nowrap">
                     R$ 790K
                   </div>
                 </div>
-                <div class="flex-1 bg-state-success/40 hover:bg-state-success/50 rounded-t h-[85%] transition-all relative group">
-                  <div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-canvas-elevated border border-border-subtle text-[10px] px-2 py-1 rounded text-state-success font-mono">
+                <!-- Bar 4 -->
+                <div class="flex-1 bg-brand/70 hover:bg-brand/90 rounded-t h-[85%] transition-all duration-200 relative group">
+                  <div class="opacity-0 group-hover:opacity-100 absolute -top-9 left-1/2 -translate-x-1/2 backdrop-blur-md bg-canvas-elevated/90 border border-border-subtle text-[10px] px-2 py-1 rounded z-50 text-brand font-mono whitespace-nowrap">
                     R$ 950K
                   </div>
                 </div>
-                <div class="flex-1 bg-state-success/50 hover:bg-state-success/60 rounded-t h-[70%] transition-all relative group">
-                  <div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-canvas-elevated border border-border-subtle text-[10px] px-2 py-1 rounded text-state-success font-mono">
+                <!-- Bar 5 -->
+                <div class="flex-1 bg-brand/60 hover:bg-brand/80 rounded-t h-[70%] transition-all duration-200 relative group">
+                  <div class="opacity-0 group-hover:opacity-100 absolute -top-9 left-1/2 -translate-x-1/2 backdrop-blur-md bg-canvas-elevated/90 border border-border-subtle text-[10px] px-2 py-1 rounded z-50 text-brand font-mono whitespace-nowrap">
                     R$ 820K
                   </div>
                 </div>
-                <div class="flex-1 bg-gradient-to-t from-brand to-state-success rounded-t h-[95%] transition-all relative group">
-                  <div class="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-canvas-elevated border border-border-subtle text-[10px] px-2 py-1 rounded text-state-success font-mono font-bold">
+                <!-- Bar 6 — current month, accent color -->
+                <div class="flex-1 rounded-t h-[95%] transition-all duration-200 relative group" style="background-color: #38bdf8; opacity: 0.9;">
+                  <div class="opacity-0 group-hover:opacity-100 absolute -top-9 left-1/2 -translate-x-1/2 backdrop-blur-md bg-canvas-elevated/90 border border-border-subtle text-[10px] px-2 py-1 rounded z-50 font-mono font-bold whitespace-nowrap" style="color: #38bdf8;">
                     R$ 1.25M
                   </div>
                 </div>

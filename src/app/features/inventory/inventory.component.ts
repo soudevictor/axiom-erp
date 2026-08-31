@@ -7,6 +7,7 @@ import {
   signal,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ScrollingModule } from '@angular/cdk/scrolling';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -378,6 +379,7 @@ type SortableColumn = 'sku' | 'name' | 'quantity' | 'unitPrice' | 'status' | 'up
               itemSize="48"
               class="h-[600px] w-full overflow-y-auto"
               style="contain: strict;"
+              (scrolledIndexChange)="onScrolledIndexChange($event)"
             >
               <div
                 *cdkVirtualFor="let item of inventoryStore.items(); trackBy: trackByItemId"
@@ -471,6 +473,21 @@ type SortableColumn = 'sku' | 'name' | 'quantity' | 'unitPrice' | 'status' | 'up
               <span>Exibindo {{ inventoryStore.items().length }} de {{ inventoryStore.totalItems() }} produtos</span>
               <span class="font-mono text-[11px] text-content-disabled">Virtual Scroll CDK • 60 FPS</span>
             </div>
+
+            <!-- Loading More Indicator -->
+            @if (inventoryStore.loadingMore()) {
+              <div
+                class="flex items-center justify-center gap-2 py-3 text-xs text-content-muted"
+                aria-live="polite"
+              >
+                <span class="inline-block w-3 h-3 rounded-full border-2 border-brand border-t-transparent animate-spin" aria-hidden="true"></span>
+                Carregando mais itens…
+              </div>
+            } @else if (!inventoryStore.hasMoreItems() && inventoryStore.items().length > 0) {
+              <div class="flex items-center justify-center py-3 text-[11px] text-content-disabled">
+                Todos os {{ inventoryStore.totalItems() }} registros exibidos.
+              </div>
+            }
           </div>
         }
       </div>
@@ -491,6 +508,7 @@ export class InventoryComponent implements OnInit {
   protected readonly inventoryStore = inject(InventoryStore);
   private readonly toastService = inject(ToastService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly route = inject(ActivatedRoute);
 
   protected readonly PlusIcon = Plus;
   protected readonly SearchIcon = Search;
@@ -532,6 +550,16 @@ export class InventoryComponent implements OnInit {
       )
       .subscribe((query) => {
         this.inventoryStore.setFilters({ search: query, page: 1 });
+      });
+
+    // Open modal automatically if ?action=new query param is present
+    this.route.queryParams
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((params) => {
+        if (params['action'] === 'new') {
+          this.isModalOpen.set(true);
+          this.selectedItemForEdit.set(null);
+        }
       });
   }
 
@@ -700,6 +728,18 @@ export class InventoryComponent implements OnInit {
     const filters = this.inventoryStore.filters();
     if (filters.sortBy !== column) return 'none';
     return filters.sortOrder === 'asc' ? 'ascending' : 'descending';
+  }
+
+  /**
+   * CDK Virtual Scroll event — fires when the first visible index changes.
+   * Triggers `loadMoreItems()` when the user is within 10 rows of the last loaded item.
+   */
+  protected onScrolledIndexChange(index: number): void {
+    const items = this.inventoryStore.items();
+    if (items.length === 0) return;
+    if (index + 15 >= items.length) {
+      this.inventoryStore.loadMoreItems();
+    }
   }
 
   /** Exports visible (filtered) inventory items to CSV */

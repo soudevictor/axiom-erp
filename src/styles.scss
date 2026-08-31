@@ -25,7 +25,9 @@
   --color-brand-subtle:    rgba(37, 99, 235, 0.12);
   --color-brand-secondary: #38bdf8;
 
+  // ── DARK MODE defaults (app is dark-first) ────────────────────────
   // Canvas & Surfaces
+  --color-canvas:          #09090b;
   --color-canvas-base:     #09090b;
   --color-canvas-surface:  #11141b;
   --color-canvas-elevated: #181d27;
@@ -82,6 +84,35 @@
 }
 
 // ─────────────────────────────────────────────────────────────────
+// Light Mode Token Overrides — activated by `.light` on <html>
+// (ThemeService adds .dark for Tailwind utilities AND .light for CSS vars)
+// ─────────────────────────────────────────────────────────────────
+
+html.light {
+  --color-canvas:          #f8fafc;
+  --color-canvas-base:     #f8fafc;
+  --color-canvas-surface:  #ffffff;
+  --color-canvas-elevated: #f1f5f9;
+
+  --color-border-subtle:   #e2e8f0;
+  --color-border-strong:   #cbd5e1;
+  --color-border-hover:    #2563eb;
+
+  --color-content-primary:  #0f172a;
+  --color-content-muted:    #475569;
+  --color-content-disabled: #94a3b8;
+
+  --shadow-elevation-1: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.04);
+  --shadow-elevation-2: 0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.06);
+  --shadow-elevation-3: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.08);
+
+  background-color: var(--color-canvas-base);
+  color: var(--color-content-primary);
+}
+
+
+
+// ─────────────────────────────────────────────────────────────────
 // Global Base Reset
 // ─────────────────────────────────────────────────────────────────
 
@@ -91,6 +122,11 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  // Smooth theming transition for Light/Dark mode toggle
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease,
+    color 0.3s ease;
 }
 
 html {

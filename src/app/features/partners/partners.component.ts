@@ -2,10 +2,14 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  DestroyRef,
   inject,
+  OnInit,
   signal,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { ActivatedRoute } from '@angular/router';
+import { HttpClient } from '@angular/common/http';
 import {
   FormBuilder,
   FormGroup,
@@ -13,6 +17,8 @@ import {
   ReactiveFormsModule,
   Validators,
 } from '@angular/forms';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { firstValueFrom } from 'rxjs';
 import {
   LucideAngularModule,
   Users,
@@ -24,11 +30,13 @@ import {
   Save,
   ShieldCheck,
   CreditCard,
+  RefreshCw,
 } from 'lucide-angular';
 
 import { StatCardComponent } from '@/shared/ui/stat-card/stat-card.component';
 import { BadgeComponent } from '@/shared/ui/badge/badge.component';
 import { CnpjMaskDirective } from '@/shared/directives/cnpj-mask.directive';
+import { SkeletonLoaderComponent } from '@/shared/ui/skeleton/skeleton-loader.component';
 import { isValidCnpj } from '@/shared/utils/cnpj-validator';
 import { ToastService } from '@/shared/ui/toast/toast.service';
 
@@ -44,9 +52,10 @@ export interface B2BPartner {
   readonly state: string;
 }
 
-const MOCK_PARTNERS: readonly B2BPartner[] = [
+const PARTNERS_API = '/api/v1/partners';
+
+const SEED_PARTNERS: readonly Omit<B2BPartner, 'id'>[] = [
   {
-    id: 'PART-001',
     cnpj: '12.345.678/0001-90',
     companyName: 'TechSupply Brasil Distribuidora Ltda',
     category: 'FORNECEDOR',
@@ -56,7 +65,6 @@ const MOCK_PARTNERS: readonly B2BPartner[] = [
     state: 'SP',
   },
   {
-    id: 'PART-002',
     cnpj: '98.765.432/0001-10',
     companyName: 'MegaLogística Soluções de Transporte S.A.',
     category: 'DISTRIBUIDOR',
@@ -66,7 +74,6 @@ const MOCK_PARTNERS: readonly B2BPartner[] = [
     state: 'RJ',
   },
   {
-    id: 'PART-003',
     cnpj: '45.111.222/0001-33',
     companyName: 'Escritório Central de Eletrônicos Eireli',
     category: 'CLIENTE_DIRETO',
@@ -76,7 +83,6 @@ const MOCK_PARTNERS: readonly B2BPartner[] = [
     state: 'MG',
   },
   {
-    id: 'PART-004',
     cnpj: '77.888.999/0001-44',
     companyName: 'Hardware & Cia Suprimentos Industriais',
     category: 'FORNECEDOR',
@@ -86,7 +92,6 @@ const MOCK_PARTNERS: readonly B2BPartner[] = [
     state: 'PR',
   },
   {
-    id: 'PART-005',
     cnpj: '33.444.555/0001-55',
     companyName: 'Global Logistics & Freight Corp',
     category: 'DISTRIBUIDOR',
@@ -115,6 +120,7 @@ function cnpjValidator(control: { value: string }): { cnpjInvalid: boolean } | n
     StatCardComponent,
     BadgeComponent,
     CnpjMaskDirective,
+    SkeletonLoaderComponent,
   ],
   template: `
     <div class="space-y-6">
@@ -122,21 +128,33 @@ function cnpjValidator(control: { value: string }): { cnpjInvalid: boolean } | n
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 class="text-2xl font-bold text-content-primary tracking-tight">
-            Gestão de Parceiros B2B & Homologação
+            Gestão de Parceiros B2B &amp; Homologação
           </h1>
           <p class="text-xs text-content-muted mt-1">
             Cadastro unificado de fornecedores, distribuidores, compliance e limites de crédito
           </p>
         </div>
 
-        <button
-          type="button"
-          (click)="openModal()"
-          class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand hover:bg-brand-hover text-white font-medium text-xs shadow-brand-glow transition-colors self-start sm:self-auto focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-canvas-base"
-        >
-          <lucide-icon [img]="PlusIcon" [size]="16" />
-          <span>Cadastrar Parceiro</span>
-        </button>
+        <div class="flex items-center gap-3">
+          <button
+            type="button"
+            (click)="loadPartners()"
+            class="p-2 rounded-lg border border-border-subtle bg-canvas-surface text-content-muted hover:text-content-primary hover:bg-canvas-elevated transition-colors focus-visible:ring-2 focus-visible:ring-brand"
+            title="Recarregar parceiros"
+            aria-label="Recarregar parceiros"
+          >
+            <lucide-icon [img]="RefreshCwIcon" [size]="18" [ngClass]="{ 'animate-spin': loading() }" />
+          </button>
+
+          <button
+            type="button"
+            (click)="openModal()"
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand hover:bg-brand-hover text-white font-medium text-xs shadow-brand-glow transition-colors self-start sm:self-auto focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-canvas-base"
+          >
+            <lucide-icon [img]="PlusIcon" [size]="16" />
+            <span>Cadastrar Parceiro</span>
+          </button>
+        </div>
       </div>
 
       <!-- KPI Summary -->
@@ -153,12 +171,13 @@ function cnpjValidator(control: { value: string }): { cnpjInvalid: boolean } | n
           [value]="'R$ ' + (totalCreditLimit() | number:'1.2-2':'pt-BR')"
           subtitle="Política de crédito ativa"
           iconName="Building2"
+          valueClass="font-mono tabular-nums tracking-tight whitespace-nowrap"
         />
 
         <app-stat-card
           title="Parceiros Homologados"
           [value]="homologadosPercentage() + '%'"
-          subtitle="Compliance & A11y ok"
+          subtitle="Compliance &amp; A11y ok"
           iconName="CheckCircle2"
         />
       </div>
@@ -184,82 +203,107 @@ function cnpjValidator(control: { value: string }): { cnpjInvalid: boolean } | n
 
       <!-- Partners Table -->
       <div class="p-6 rounded-xl border border-border-subtle bg-canvas-surface backdrop-blur-md">
-        <div class="overflow-x-auto">
-          <table class="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr class="border-b border-border-subtle text-content-muted uppercase font-semibold tracking-wider">
-                <th class="py-3 px-4">CNPJ</th>
-                <th class="py-3 px-4">Razão Social</th>
-                <th class="py-3 px-4">UF</th>
-                <th class="py-3 px-4">Categoria</th>
-                <th class="py-3 px-4">Crédito Utilizado / Limite</th>
-                <th class="py-3 px-4 text-center">Homologação</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-border-subtle/60 text-content-primary">
-              @for (partner of filteredPartners(); track partner.id) {
-                <tr class="hover:bg-canvas-elevated transition-colors">
-                  <td class="py-3 px-4 font-mono text-brand-secondary font-medium">{{ partner.cnpj }}</td>
-                  <td class="py-3 px-4 font-medium text-content-primary">{{ partner.companyName }}</td>
-                  <td class="py-3 px-4 text-content-muted font-mono">{{ partner.state }}</td>
-                  <td class="py-3 px-4 text-content-muted">{{ partner.category }}</td>
+        <!-- Loading Skeleton -->
+        @if (loading()) {
+          <div class="space-y-3" aria-live="polite">
+            <app-skeleton-loader [count]="5" height="2.5rem" />
+          </div>
+        }
 
-                  <!-- Credit Limit Progress Bar -->
-                  <td class="py-3 px-4">
-                    <div class="space-y-1.5 min-w-40">
-                      <div class="flex items-center justify-between text-[10px] font-mono">
-                        <span class="text-content-muted">
-                          R$ {{ partner.creditUsed | number:'1.0-0':'pt-BR' }}
-                        </span>
-                        <span
-                          class="font-semibold"
-                          [class.text-state-danger]="creditPercent(partner) >= 90"
-                          [class.text-state-warning]="creditPercent(partner) >= 70 && creditPercent(partner) < 90"
-                          [class.text-state-success]="creditPercent(partner) < 70"
-                        >
-                          {{ creditPercent(partner) }}%
-                        </span>
-                      </div>
-                      <div
-                        class="w-full h-1.5 rounded-full bg-canvas-base overflow-hidden"
-                        role="progressbar"
-                        [attr.aria-valuenow]="creditPercent(partner)"
-                        aria-valuemin="0"
-                        aria-valuemax="100"
-                        [attr.aria-label]="'Crédito utilizado: ' + creditPercent(partner) + '% do limite de R$ ' + partner.creditLimit"
-                      >
-                        <div
-                          class="h-full rounded-full transition-all duration-500"
-                          [style.width]="creditPercent(partner) + '%'"
-                          [class.bg-state-success]="creditPercent(partner) < 70"
-                          [class.bg-state-warning]="creditPercent(partner) >= 70 && creditPercent(partner) < 90"
-                          [class.bg-state-danger]="creditPercent(partner) >= 90"
-                        ></div>
-                      </div>
-                      <div class="text-[10px] text-content-disabled font-mono">
-                        Limite: R$ {{ partner.creditLimit | number:'1.0-0':'pt-BR' }}
-                      </div>
-                    </div>
-                  </td>
+        <!-- Error State -->
+        @else if (error()) {
+          <div class="p-4 rounded-lg bg-state-danger-subtle border border-state-danger/30 text-state-danger text-xs" role="alert">
+            {{ error() }}
+            <button type="button" (click)="loadPartners()" class="ml-3 underline">Tentar novamente</button>
+          </div>
+        }
 
-                  <td class="py-3 px-4 text-center">
-                    @switch (partner.status) {
-                      @case ('HOMOLOGADO') {
-                        <app-badge variant="SUCCESS" label="HOMOLOGADO" />
-                      }
-                      @case ('EM_ANALISE') {
-                        <app-badge variant="WARNING" label="EM ANÁLISE" />
-                      }
-                      @case ('BLOQUEADO') {
-                        <app-badge variant="DANGER" label="BLOQUEADO" />
-                      }
-                    }
-                  </td>
+        <!-- Data Table -->
+        @else {
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr class="border-b border-border-subtle text-content-muted uppercase font-semibold tracking-wider">
+                  <th class="py-3 px-4">CNPJ</th>
+                  <th class="py-3 px-4">Razão Social</th>
+                  <th class="py-3 px-4">UF</th>
+                  <th class="py-3 px-4">Categoria</th>
+                  <th class="py-3 px-4">Crédito Utilizado / Limite</th>
+                  <th class="py-3 px-4 text-center">Homologação</th>
                 </tr>
-              }
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody class="divide-y divide-border-subtle/60 text-content-primary">
+                @if (filteredPartners().length === 0) {
+                  <tr>
+                    <td colspan="6" class="py-16 text-center text-content-muted">
+                      Nenhum parceiro encontrado. Clique em "Cadastrar Parceiro" para adicionar.
+                    </td>
+                  </tr>
+                }
+                @for (partner of filteredPartners(); track partner.id) {
+                  <tr class="hover:bg-canvas-elevated transition-colors">
+                    <td class="py-3 px-4 font-mono text-brand-secondary font-medium">{{ partner.cnpj }}</td>
+                    <td class="py-3 px-4 font-medium text-content-primary">{{ partner.companyName }}</td>
+                    <td class="py-3 px-4 text-content-muted font-mono">{{ partner.state }}</td>
+                    <td class="py-3 px-4 text-content-muted">{{ partner.category }}</td>
+
+                    <!-- Credit Limit Progress Bar -->
+                    <td class="py-3 px-4">
+                      <div class="space-y-1.5 min-w-40">
+                        <div class="flex items-center justify-between text-[10px] font-mono">
+                          <span class="text-content-muted">
+                            R$ {{ partner.creditUsed | number:'1.0-0':'pt-BR' }}
+                          </span>
+                          <span
+                            class="font-semibold"
+                            [class.text-state-danger]="creditPercent(partner) >= 90"
+                            [class.text-state-warning]="creditPercent(partner) >= 70 && creditPercent(partner) < 90"
+                            [class.text-state-success]="creditPercent(partner) < 70"
+                          >
+                            {{ creditPercent(partner) }}%
+                          </span>
+                        </div>
+                        <div
+                          class="w-full h-1.5 rounded-full bg-canvas-base overflow-hidden"
+                          role="progressbar"
+                          [attr.aria-valuenow]="creditPercent(partner)"
+                          aria-valuemin="0"
+                          aria-valuemax="100"
+                          [attr.aria-label]="'Crédito utilizado: ' + creditPercent(partner) + '% do limite de R$ ' + partner.creditLimit"
+                        >
+                          <div
+                            class="h-full rounded-full transition-all duration-500"
+                            [style.width]="creditPercent(partner) + '%'"
+                            [class.bg-state-success]="creditPercent(partner) < 70"
+                            [class.bg-state-warning]="creditPercent(partner) >= 70 && creditPercent(partner) < 90"
+                            [class.bg-state-danger]="creditPercent(partner) >= 90"
+                          ></div>
+                        </div>
+                        <div class="text-[10px] text-content-disabled font-mono">
+                          Limite: R$ {{ partner.creditLimit | number:'1.0-0':'pt-BR' }}
+                        </div>
+                      </div>
+                    </td>
+
+                    <td class="py-3 px-4 text-center">
+                      @switch (partner.status) {
+                        @case ('HOMOLOGADO') {
+                          <app-badge variant="SUCCESS" label="HOMOLOGADO" />
+                        }
+                        @case ('EM_ANALISE') {
+                          <app-badge variant="WARNING" label="EM ANÁLISE" />
+                        }
+                        @case ('BLOQUEADO') {
+                          <app-badge variant="DANGER" label="BLOQUEADO" />
+                        }
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
       </div>
 
       <!-- Partner Registration Modal -->
@@ -291,7 +335,7 @@ function cnpjValidator(control: { value: string }): { cnpjInvalid: boolean } | n
             </div>
 
             <!-- Form -->
-            <form [formGroup]="partnerForm" (ngSubmit)="onPartnerSubmit()" class="space-y-4">
+            <form [formGroup]="partnerForm" (ngSubmit)="onPartnerSubmit()" class="space-y-4" novalidate>
               <!-- CNPJ with mask + validation -->
               <div>
                 <label for="cnpj" class="block text-xs font-semibold text-content-muted uppercase tracking-wider mb-1">
@@ -398,11 +442,11 @@ function cnpjValidator(control: { value: string }): { cnpjInvalid: boolean } | n
                 </button>
                 <button
                   type="submit"
-                  [disabled]="partnerForm.invalid"
+                  [disabled]="partnerForm.invalid || submitting()"
                   class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium text-xs shadow-brand-glow transition-colors"
                 >
                   <lucide-icon [img]="SaveIcon" [size]="16" />
-                  Cadastrar Parceiro
+                  {{ submitting() ? 'Salvando…' : 'Cadastrar Parceiro' }}
                 </button>
               </div>
             </form>
@@ -413,9 +457,12 @@ function cnpjValidator(control: { value: string }): { cnpjInvalid: boolean } | n
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class PartnersComponent {
+export class PartnersComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
+  private readonly http = inject(HttpClient);
   private readonly toastService = inject(ToastService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly PlusIcon = Plus;
   protected readonly UsersIcon = Users;
@@ -426,10 +473,14 @@ export class PartnersComponent {
   protected readonly SaveIcon = Save;
   protected readonly ShieldCheckIcon = ShieldCheck;
   protected readonly CreditCardIcon = CreditCard;
+  protected readonly RefreshCwIcon = RefreshCw;
 
   protected readonly searchQuery = signal('');
-  protected readonly partners = signal<readonly B2BPartner[]>(MOCK_PARTNERS);
+  protected readonly partners = signal<readonly B2BPartner[]>([]);
   protected readonly isModalOpen = signal(false);
+  protected readonly loading = signal(false);
+  protected readonly submitting = signal(false);
+  protected readonly error = signal<string | null>(null);
 
   protected readonly filteredPartners = computed<readonly B2BPartner[]>(() => {
     const q = this.searchQuery().toLowerCase();
@@ -466,6 +517,54 @@ export class PartnersComponent {
     return Math.min(100, Math.round((partner.creditUsed / partner.creditLimit) * 100));
   }
 
+  ngOnInit(): void {
+    this.loadPartners();
+
+    // Open modal automatically if ?action=new query param is present
+    this.route.queryParams
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((params) => {
+        if (params['action'] === 'new') {
+          this.openModal();
+        }
+      });
+  }
+
+  protected async loadPartners(): Promise<void> {
+    this.loading.set(true);
+    this.error.set(null);
+    try {
+      const list = await firstValueFrom(
+        this.http.get<readonly B2BPartner[]>(PARTNERS_API)
+      );
+      if (list.length === 0) {
+        // Seed initial partners on first load
+        await this.seedInitialPartners();
+        const seeded = await firstValueFrom(
+          this.http.get<readonly B2BPartner[]>(PARTNERS_API)
+        );
+        this.partners.set(seeded);
+      } else {
+        this.partners.set(list);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro ao carregar parceiros.';
+      this.error.set(msg);
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  private async seedInitialPartners(): Promise<void> {
+    for (const p of SEED_PARTNERS) {
+      try {
+        await firstValueFrom(this.http.post<B2BPartner>(PARTNERS_API, p));
+      } catch {
+        // Best-effort seed — ignore duplicates
+      }
+    }
+  }
+
   protected openModal(): void {
     this.partnerForm.reset({
       cnpj: '',
@@ -485,8 +584,11 @@ export class PartnersComponent {
     if (event.target === event.currentTarget) this.closeModal();
   }
 
-  protected onPartnerSubmit(): void {
-    if (this.partnerForm.invalid) return;
+  protected async onPartnerSubmit(): Promise<void> {
+    if (this.partnerForm.invalid) {
+      this.partnerForm.markAllAsTouched();
+      return;
+    }
 
     const value = this.partnerForm.value as {
       cnpj: string;
@@ -496,8 +598,7 @@ export class PartnersComponent {
       creditLimit: number;
     };
 
-    const newPartner: B2BPartner = {
-      id: `PART-${String(this.partners().length + 1).padStart(3, '0')}`,
+    const payload: Omit<B2BPartner, 'id'> = {
       cnpj: value.cnpj,
       companyName: value.companyName,
       category: value.category,
@@ -507,11 +608,23 @@ export class PartnersComponent {
       state: value.state.toUpperCase(),
     };
 
-    this.partners.update((current) => [...current, newPartner]);
-    this.closeModal();
-    this.toastService.success(
-      'Parceiro Cadastrado',
-      `${value.companyName} foi adicionado em análise de homologação.`
-    );
+    this.submitting.set(true);
+    try {
+      const created = await firstValueFrom(
+        this.http.post<B2BPartner>(PARTNERS_API, payload)
+      );
+      // Optimistically prepend new partner to the top of the list
+      this.partners.update((current) => [created, ...current]);
+      this.closeModal();
+      this.toastService.success(
+        'Parceiro Cadastrado',
+        `${value.companyName} foi adicionado em análise de homologação.`
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro ao cadastrar parceiro.';
+      this.toastService.error('Erro', msg);
+    } finally {
+      this.submitting.set(false);
+    }
   }
 }

@@ -23,12 +23,15 @@ import {
   RotateCcw,
   ChevronDown,
   Command,
+  Sun,
+  Moon,
 } from 'lucide-angular';
 import { filter } from 'rxjs/operators';
 import { DevResilienceService } from '@/core/interceptors/dev-resilience.service';
 import { DatabaseSeedService } from '@/core/database/database-seed.service';
 import { ToastService } from '@/shared/ui/toast/toast.service';
 import { CommandPaletteComponent } from '@/shared/ui/command-palette/command-palette.component';
+import { ThemeService } from '@/core/services/theme.service';
 
 export interface BreadcrumbItem {
   readonly label: string;
@@ -212,6 +215,21 @@ const ROUTE_NAME_MAP: Record<string, string> = {
           }
         </div>
 
+        <!-- Theme Toggle (Sun / Moon) -->
+        <button
+          type="button"
+          (click)="themeService.toggle()"
+          class="relative p-2 rounded-lg text-content-muted hover:text-content-primary hover:bg-canvas-elevated transition-colors focus-visible:ring-2 focus-visible:ring-brand"
+          [attr.aria-label]="themeService.mode() === 'dark' ? 'Ativar modo claro' : 'Ativar modo escuro'"
+          [title]="themeService.mode() === 'dark' ? 'Ativar modo claro' : 'Ativar modo escuro'"
+        >
+          @if (themeService.mode() === 'dark') {
+            <lucide-icon [img]="SunIcon" [size]="18" />
+          } @else {
+            <lucide-icon [img]="MoonIcon" [size]="18" />
+          }
+        </button>
+
         <!-- Notifications button -->
         <button
           type="button"
@@ -282,6 +300,7 @@ export class HeaderComponent {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
+  protected readonly themeService = inject(ThemeService);
   protected readonly devService = inject(DevResilienceService);
   private readonly seedService = inject(DatabaseSeedService);
   private readonly toastService = inject(ToastService);
@@ -303,6 +322,8 @@ export class HeaderComponent {
   protected readonly RotateCcwIcon = RotateCcw;
   protected readonly ChevronDownIcon = ChevronDown;
   protected readonly CommandIcon = Command;
+  protected readonly SunIcon = Sun;
+  protected readonly MoonIcon = Moon;
 
   constructor() {
     this.updateBreadcrumbs(this.router.url);

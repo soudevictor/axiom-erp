@@ -22,6 +22,8 @@ interface InventoryState {
   items: readonly InventoryItem[];
   totalItems: number;
   loading: boolean;
+  /** True while loadMoreItems() is fetching the next page */
+  loadingMore: boolean;
   error: string | null;
   filters: InventoryFilter;
   summaryStats: {
@@ -30,16 +32,23 @@ interface InventoryState {
   } | null;
   /** IDs currently selected for bulk actions */
   selectedIds: readonly string[];
+  /** Whether more pages are available for infinite scroll */
+  hasMoreItems: boolean;
+  /** Current infinite-scroll page cursor (separate from filters.page) */
+  infinitePage: number;
 }
 
 const initialState: InventoryState = {
   items: [],
   totalItems: 0,
   loading: false,
+  loadingMore: false,
   error: null,
   filters: DEFAULT_INVENTORY_FILTER,
   summaryStats: null,
   selectedIds: [],
+  hasMoreItems: true,
+  infinitePage: 1,
 };
 
 function buildHttpParams(filters: InventoryFilter): HttpParams {
@@ -116,7 +125,7 @@ export const InventoryStore = signalStore(
 
     return {
       async loadItems(): Promise<void> {
-        patchState(store, { loading: true, error: null });
+        patchState(store, { loading: true, error: null, infinitePage: 1 });
 
         try {
           const params = buildHttpParams(store.filters());
@@ -137,6 +146,8 @@ export const InventoryStore = signalStore(
             loading: false,
             summaryStats,
             selectedIds: [],
+            hasMoreItems: response.hasNextPage,
+            infinitePage: 1,
           });
         } catch (err: unknown) {
           const message =
@@ -145,9 +156,39 @@ export const InventoryStore = signalStore(
         }
       },
 
+      /** Appends the next page of items to the existing list (infinite scroll). */
+      async loadMoreItems(): Promise<void> {
+        if (store.loadingMore() || !store.hasMoreItems()) return;
+
+        const nextPage = store.infinitePage() + 1;
+        patchState(store, { loadingMore: true });
+
+        try {
+          const params = buildHttpParams({ ...store.filters(), page: nextPage });
+          const response = await firstValueFrom(
+            http.get<PaginatedResponse<InventoryItem>>(API_URL, { params })
+          );
+
+          patchState(store, {
+            items: [...store.items(), ...response.data],
+            totalItems: response.totalItems,
+            loadingMore: false,
+            hasMoreItems: response.hasNextPage,
+            infinitePage: nextPage,
+          });
+        } catch (err: unknown) {
+          const message =
+            err instanceof Error ? err.message : 'Erro ao carregar mais itens.';
+          patchState(store, { error: message, loadingMore: false });
+        }
+      },
+
       async setFilters(partialFilters: Partial<InventoryFilter>): Promise<void> {
+        const safeFilters = partialFilters || {};
         patchState(store, {
-          filters: { ...store.filters(), ...partialFilters, page: partialFilters.page ?? 1 },
+          filters: { ...store.filters(), ...safeFilters, page: safeFilters.page ?? 1 },
+          hasMoreItems: true,
+          infinitePage: 1,
         });
         await this.loadItems();
       },

@@ -18,11 +18,14 @@ import {
 import type { PaginatedResponse } from '@/core/models/pagination.model';
 
 const API_URL = '/api/v1/treasury';
+const SUMMARY_URL = '/api/v1/treasury/summary';
 
 interface TreasuryState {
   transactions: readonly TreasuryTransaction[];
   totalItems: number;
   loading: boolean;
+  /** True while loadMoreItems() fetches next page */
+  loadingMore: boolean;
   error: string | null;
   filters: TreasuryFilter;
   summaryStats: {
@@ -30,15 +33,29 @@ interface TreasuryState {
     totalPayables: number;
     totalBalance: number;
   } | null;
+  aging: {
+    overdue: TreasuryTransaction[];
+    today: TreasuryTransaction[];
+    next7: TreasuryTransaction[];
+    next30: TreasuryTransaction[];
+  } | null;
+  /** Whether more pages are available for infinite scroll */
+  hasMoreItems: boolean;
+  /** Current infinite-scroll page cursor */
+  infinitePage: number;
 }
 
 const initialState: TreasuryState = {
   transactions: [],
   totalItems: 0,
   loading: false,
+  loadingMore: false,
   error: null,
   filters: DEFAULT_TREASURY_FILTER,
   summaryStats: null,
+  aging: null,
+  hasMoreItems: true,
+  infinitePage: 1,
 };
 
 function buildHttpParams(filters: TreasuryFilter): HttpParams {
@@ -129,8 +146,43 @@ export const TreasuryStore = signalStore(
     const http = inject(HttpClient);
 
     return {
+      /**
+       * Loads global KPI summary from ALL transactions (unpaginated).
+       * Decoupled from the paginated transaction list so KPIs are always accurate.
+       */
+      async loadSummary(): Promise<void> {
+        try {
+          const summary = await firstValueFrom(
+            http.get<{
+              totalReceivables: number;
+              totalPayables: number;
+              totalBalance: number;
+              totalItems: number;
+              aging: {
+                overdue: TreasuryTransaction[];
+                today: TreasuryTransaction[];
+                next7: TreasuryTransaction[];
+                next30: TreasuryTransaction[];
+              };
+            }>(SUMMARY_URL)
+          );
+
+          patchState(store, {
+            summaryStats: {
+              totalReceivables: summary.totalReceivables,
+              totalPayables: summary.totalPayables,
+              totalBalance: summary.totalBalance,
+            },
+            aging: summary.aging,
+            totalItems: summary.totalItems,
+          });
+        } catch {
+          // Summary fetch failure is non-blocking; computed signals will fallback
+        }
+      },
+
       async loadTransactions(): Promise<void> {
-        patchState(store, { loading: true, error: null });
+        patchState(store, { loading: true, error: null, infinitePage: 1 });
 
         try {
           const params = buildHttpParams(store.filters());
@@ -151,6 +203,8 @@ export const TreasuryStore = signalStore(
             totalItems: response.totalItems,
             loading: false,
             summaryStats,
+            hasMoreItems: response.hasNextPage,
+            infinitePage: 1,
           });
         } catch (err: unknown) {
           const message =
@@ -161,13 +215,43 @@ export const TreasuryStore = signalStore(
         }
       },
 
+      /** Appends the next page to existing transactions (infinite scroll). */
+      async loadMoreItems(): Promise<void> {
+        if (store.loadingMore() || !store.hasMoreItems()) return;
+
+        const nextPage = store.infinitePage() + 1;
+        patchState(store, { loadingMore: true });
+
+        try {
+          const params = buildHttpParams({ ...store.filters(), page: nextPage });
+          const response = await firstValueFrom(
+            http.get<PaginatedResponse<TreasuryTransaction>>(API_URL, { params })
+          );
+
+          patchState(store, {
+            transactions: [...store.transactions(), ...response.data],
+            totalItems: response.totalItems,
+            loadingMore: false,
+            hasMoreItems: response.hasNextPage,
+            infinitePage: nextPage,
+          });
+        } catch (err: unknown) {
+          const message =
+            err instanceof Error ? err.message : 'Erro ao carregar mais transações.';
+          patchState(store, { error: message, loadingMore: false });
+        }
+      },
+
       async setFilters(partialFilters: Partial<TreasuryFilter>): Promise<void> {
+        const safeFilters = partialFilters || {};
         patchState(store, {
           filters: {
             ...store.filters(),
-            ...partialFilters,
-            page: partialFilters.page ?? 1,
+            ...safeFilters,
+            page: safeFilters.page ?? 1,
           },
+          hasMoreItems: true,
+          infinitePage: 1,
         });
         await this.loadTransactions();
       },
@@ -181,7 +265,9 @@ export const TreasuryStore = signalStore(
           await firstValueFrom(
             http.post<TreasuryTransaction>(API_URL, tx)
           );
+          // Reload to get the full updated list with server-assigned ID, ordered correctly
           await this.loadTransactions();
+          await this.loadSummary();
         } catch (err: unknown) {
           const message =
             err instanceof Error ? err.message : 'Erro ao cadastrar transação.';
@@ -206,6 +292,7 @@ export const TreasuryStore = signalStore(
             })
           );
           await this.loadTransactions();
+          await this.loadSummary();
         } catch (err: unknown) {
           const message =
             err instanceof Error
@@ -216,13 +303,18 @@ export const TreasuryStore = signalStore(
       },
 
       resetFilters(): void {
-        patchState(store, { filters: DEFAULT_TREASURY_FILTER });
+        patchState(store, {
+          filters: DEFAULT_TREASURY_FILTER,
+          hasMoreItems: true,
+          infinitePage: 1,
+        });
       },
     };
   }),
 
   withHooks({
     onInit(store) {
+      store.loadSummary();
       store.loadTransactions();
     },
   })
