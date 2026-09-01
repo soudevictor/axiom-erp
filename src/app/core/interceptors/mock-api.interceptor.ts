@@ -9,11 +9,14 @@ import { delay, Observable, of, switchMap, throwError } from 'rxjs';
 import { db } from '@/core/database/app-database';
 import type { InventoryItem } from '@/core/models/inventory.model';
 import type { TreasuryTransaction } from '@/core/models/treasury.model';
+import type { B2BPartner } from '@/features/partners/partners.component';
 import type { PaginatedResponse } from '@/core/models/pagination.model';
 import { DevResilienceService } from './dev-resilience.service';
 
 const INVENTORY_PREFIX = '/api/v1/inventory';
 const TREASURY_PREFIX = '/api/v1/treasury';
+const TREASURY_SUMMARY_PREFIX = '/api/v1/treasury/summary';
+const PARTNERS_PREFIX = '/api/v1/partners';
 const SIMULATE_ERROR_HEADER = 'X-Simulate-Error';
 
 function getSimulatedLatency(slowLatency: boolean): number {
@@ -252,6 +255,73 @@ async function handleGetTreasury(
   };
 }
 
+/**
+ * Returns global summary KPIs from ALL treasury transactions (unpaginated).
+ * This is called independently of the paginated GET so that KPIs are accurate
+ * even when only the first page of transactions has been loaded.
+ */
+async function handleGetTreasurySummary(): Promise<{
+  totalReceivables: number;
+  totalPayables: number;
+  totalBalance: number;
+  totalItems: number;
+  aging: {
+    overdue: TreasuryTransaction[];
+    today: TreasuryTransaction[];
+    next7: TreasuryTransaction[];
+    next30: TreasuryTransaction[];
+  };
+}> {
+  const allTransactions = await db.transactions.toArray();
+
+  const totalReceivables = allTransactions
+    .filter((t) => t.type === 'INCOME' && t.status !== 'CANCELLED')
+    .reduce((sum, t) => sum + t.amount, 0);
+  const totalPayables = allTransactions
+    .filter((t) => t.type === 'EXPENSE' && t.status !== 'CANCELLED')
+    .reduce((sum, t) => sum + t.amount, 0);
+  const incomeCompleted = allTransactions
+    .filter((t) => t.type === 'INCOME' && t.status === 'COMPLETED')
+    .reduce((sum, t) => sum + t.amount, 0);
+  const expenseCompleted = allTransactions
+    .filter((t) => t.type === 'EXPENSE' && t.status === 'COMPLETED')
+    .reduce((sum, t) => sum + t.amount, 0);
+  const totalBalance = incomeCompleted - expenseCompleted;
+
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+
+  const pending = allTransactions.filter((t) => t.status === 'PENDING');
+  const overdue: TreasuryTransaction[] = [];
+  const today: TreasuryTransaction[] = [];
+  const next7: TreasuryTransaction[] = [];
+  const next30: TreasuryTransaction[] = [];
+
+  for (const tx of pending) {
+    const due = new Date(tx.dueDate);
+    due.setHours(0, 0, 0, 0);
+    const diffDays = Math.round((due.getTime() - now.getTime()) / 86_400_000);
+
+    if (diffDays < 0) {
+      overdue.push(tx);
+    } else if (diffDays === 0) {
+      today.push(tx);
+    } else if (diffDays <= 7) {
+      next7.push(tx);
+    } else if (diffDays <= 30) {
+      next30.push(tx);
+    }
+  }
+
+  return {
+    totalReceivables,
+    totalPayables,
+    totalBalance,
+    totalItems: allTransactions.length,
+    aging: { overdue, today, next7, next30 },
+  };
+}
+
 async function handlePostTreasury(
   body: Omit<TreasuryTransaction, 'id'>
 ): Promise<TreasuryTransaction> {
@@ -283,6 +353,38 @@ async function handleDeleteTreasury(id: string): Promise<void> {
   await db.transactions.delete(id);
 }
 
+// ─────────────────────────────────────────────
+// PARTNERS HANDLERS
+// ─────────────────────────────────────────────
+
+async function handleGetPartners(
+  params: HttpParams
+): Promise<readonly B2BPartner[]> {
+  const search = (params.get('search') ?? '').toLowerCase();
+  let all = await db.partners.toArray();
+  if (search) {
+    all = all.filter(
+      (p) =>
+        p.companyName.toLowerCase().includes(search) ||
+        p.cnpj.toLowerCase().includes(search)
+    );
+  }
+  // Newest first (highest ID last insert → sort by companyName as fallback)
+  return all.reverse();
+}
+
+async function handlePostPartner(body: Omit<B2BPartner, 'id'>): Promise<B2BPartner> {
+  const count = await db.partners.count();
+  const newPartner: B2BPartner = {
+    ...body,
+    id: `PART-${String(count + 1).padStart(3, '0')}-${Date.now()}`,
+    status: body.status ?? 'EM_ANALISE',
+    creditUsed: body.creditUsed ?? 0,
+  };
+  await db.partners.add(newPartner);
+  return newPartner;
+}
+
 function extractIdFromUrl(url: string, prefix: string): string {
   const cleanUrl = url.split('?')[0];
   return cleanUrl.replace(`${prefix}/`, '').replace(prefix, '');
@@ -290,9 +392,11 @@ function extractIdFromUrl(url: string, prefix: string): string {
 
 export const mockApiInterceptor: HttpInterceptorFn = (req, next) => {
   const isInventory = req.url.startsWith(INVENTORY_PREFIX);
-  const isTreasury = req.url.startsWith(TREASURY_PREFIX);
+  const isTreasurySummary = req.url.startsWith(TREASURY_SUMMARY_PREFIX);
+  const isTreasury = !isTreasurySummary && req.url.startsWith(TREASURY_PREFIX);
+  const isPartners = req.url.startsWith(PARTNERS_PREFIX);
 
-  if (!isInventory && !isTreasury) {
+  if (!isInventory && !isTreasury && !isTreasurySummary && !isPartners) {
     return next(req);
   }
 
@@ -306,11 +410,24 @@ export const mockApiInterceptor: HttpInterceptorFn = (req, next) => {
     );
   }
 
-  const prefix = isInventory ? INVENTORY_PREFIX : TREASURY_PREFIX;
+  const prefix = isInventory ? INVENTORY_PREFIX : isTreasury ? TREASURY_PREFIX : PARTNERS_PREFIX;
   const cleanPath = req.url.split('?')[0];
   const itemId = cleanPath !== prefix ? extractIdFromUrl(req.url, prefix) : '';
 
   let response$: Observable<HttpResponse<unknown>>;
+
+  // Treasury summary endpoint (must come before generic treasury)
+  if (isTreasurySummary && req.method === 'GET') {
+    response$ = new Observable((subscriber) => {
+      handleGetTreasurySummary()
+        .then((res) => {
+          subscriber.next(new HttpResponse({ status: 200, body: res }));
+          subscriber.complete();
+        })
+        .catch((err) => subscriber.error(err));
+    });
+    return response$.pipe(delay(simulatedDelay));
+  }
 
   if (isInventory) {
     switch (req.method) {
@@ -357,7 +474,7 @@ export const mockApiInterceptor: HttpInterceptorFn = (req, next) => {
       default:
         return next(req);
     }
-  } else {
+  } else if (isTreasury) {
     switch (req.method) {
       case 'GET':
         response$ = new Observable((subscriber) => {
@@ -402,6 +519,33 @@ export const mockApiInterceptor: HttpInterceptorFn = (req, next) => {
       default:
         return next(req);
     }
+  } else if (isPartners) {
+    switch (req.method) {
+      case 'GET':
+        response$ = new Observable((subscriber) => {
+          handleGetPartners(req.params)
+            .then((res) => {
+              subscriber.next(new HttpResponse({ status: 200, body: res }));
+              subscriber.complete();
+            })
+            .catch((err) => subscriber.error(err));
+        });
+        break;
+      case 'POST':
+        response$ = new Observable((subscriber) => {
+          handlePostPartner(req.body as Omit<B2BPartner, 'id'>)
+            .then((created) => {
+              subscriber.next(new HttpResponse({ status: 201, body: created }));
+              subscriber.complete();
+            })
+            .catch((err) => subscriber.error(err));
+        });
+        break;
+      default:
+        return next(req);
+    }
+  } else {
+    return next(req);
   }
 
   return response$.pipe(delay(simulatedDelay));

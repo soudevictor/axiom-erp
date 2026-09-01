@@ -2,13 +2,16 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  DestroyRef,
   inject,
   OnInit,
   signal,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ScrollingModule } from '@angular/cdk/scrolling';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   LucideAngularModule,
   Wallet,
@@ -29,6 +32,8 @@ import {
 } from 'lucide-angular';
 
 import { TreasuryStore } from './data-access/treasury.store';
+import { TransactionModalComponent } from './ui/transaction-modal.component';
+import type { TransactionFormValue } from './ui/transaction-modal.component';
 import { StatCardComponent } from '@/shared/ui/stat-card/stat-card.component';
 import { BadgeComponent } from '@/shared/ui/badge/badge.component';
 import { SkeletonLoaderComponent } from '@/shared/ui/skeleton/skeleton-loader.component';
@@ -60,6 +65,7 @@ interface AgingBucket {
     StatCardComponent,
     BadgeComponent,
     SkeletonLoaderComponent,
+    TransactionModalComponent,
   ],
   template: `
     <div class="space-y-6">
@@ -67,7 +73,7 @@ interface AgingBucket {
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 class="text-2xl font-bold text-content-primary tracking-tight">
-            Tesouraria & Gestão de Fluxo de Caixa
+            Tesouraria &amp; Gestão de Fluxo de Caixa
           </h1>
           <p class="text-xs text-content-muted mt-1">
             Controle integrado de lançamentos, contas a pagar, recebimentos e extrato bancário reativo
@@ -91,7 +97,7 @@ interface AgingBucket {
 
           <button
             type="button"
-            (click)="simulateNewTransaction()"
+            (click)="openModal()"
             class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand hover:bg-brand-hover text-white font-medium text-xs shadow-brand-glow transition-colors focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-canvas-base"
           >
             <lucide-icon [img]="PlusIcon" [size]="16" />
@@ -108,6 +114,7 @@ interface AgingBucket {
           [trend]="{ value: 5.4, isPositive: true, label: 'posição de caixa' }"
           subtitle="Conta Principal Itaú BBA"
           iconName="Wallet"
+          valueClass="font-mono tabular-nums tracking-tight whitespace-nowrap"
         />
 
         <app-stat-card
@@ -116,6 +123,7 @@ interface AgingBucket {
           [trend]="{ value: 12.1, isPositive: true, label: 'faturamento previsto' }"
           subtitle="Duplicatas de Clientes"
           iconName="ArrowUpRight"
+          valueClass="font-mono tabular-nums tracking-tight whitespace-nowrap"
         />
 
         <app-stat-card
@@ -124,6 +132,7 @@ interface AgingBucket {
           [trend]="{ value: 1.8, isPositive: false, label: 'compromissos' }"
           subtitle="Fornecedores e Fretes"
           iconName="ArrowDownRight"
+          valueClass="font-mono tabular-nums tracking-tight whitespace-nowrap"
         />
       </div>
 
@@ -236,7 +245,7 @@ interface AgingBucket {
             <button
               type="button"
               (click)="clearFilters()"
-              class="px-3 py-2 rounded-lg text-xs font-medium text-state-danger hover:bg-state-danger-subtle border border-state-danger/20 transition-colors"
+              class="px-3 py-2 rounded-lg text-xs font-medium text-state-danger hover:bg-state-danger-subtle border border-state-danger transition-colors"
             >
               Limpar Filtros
             </button>
@@ -249,7 +258,7 @@ interface AgingBucket {
         <!-- 1. ERROR STATE -->
         @if (treasuryStore.error()) {
           <div
-            class="p-4 rounded-lg bg-state-danger-subtle border border-state-danger/30 flex items-center justify-between gap-4 text-state-danger"
+            class="p-4 rounded-lg bg-state-danger-subtle border border-state-danger flex items-center justify-between gap-4 text-state-danger"
             role="alert"
             aria-live="assertive"
           >
@@ -318,10 +327,11 @@ interface AgingBucket {
             <cdk-virtual-scroll-viewport
               itemSize="56"
               class="h-[440px] w-full custom-scrollbar"
+              (scrolledIndexChange)="onScrolledIndexChange($event)"
             >
               <div
                 *cdkVirtualFor="let tx of treasuryStore.transactions(); trackBy: trackByTxId"
-                class="grid grid-cols-12 gap-4 px-4 py-3 border-b border-border-subtle/60 hover:bg-canvas-elevated text-xs items-center transition-colors"
+                class="grid grid-cols-12 gap-4 px-4 py-3 border-b border-border-subtle hover:bg-canvas-elevated text-xs items-center transition-colors"
               >
                 <!-- Description & Partner -->
                 <div class="col-span-4 min-w-0">
@@ -345,7 +355,7 @@ interface AgingBucket {
 
                 <!-- Amount -->
                 <div
-                  class="col-span-2 text-right font-mono font-semibold"
+                  class="col-span-2 text-right font-mono font-semibold tabular-nums"
                   [ngClass]="tx.type === 'INCOME' ? 'text-state-success' : 'text-state-danger'"
                 >
                   {{ tx.type === 'INCOME' ? '+' : '-' }} R$ {{ tx.amount | number:'1.2-2':'pt-BR' }}
@@ -387,9 +397,29 @@ interface AgingBucket {
               <span>Exibindo {{ treasuryStore.transactions().length }} de {{ treasuryStore.totalItems() }} lançamentos</span>
               <span class="font-mono text-[11px] text-content-disabled">Conciliação Automática Dexie.js</span>
             </div>
+
+            <!-- Loading More Indicator -->
+            @if (treasuryStore.loadingMore()) {
+              <div class="flex items-center justify-center gap-2 py-3 text-xs text-content-muted" aria-live="polite">
+                <span class="inline-block w-3 h-3 rounded-full border-2 border-brand border-t-transparent animate-spin" aria-hidden="true"></span>
+                Carregando mais transações…
+              </div>
+            } @else if (!treasuryStore.hasMoreItems() && treasuryStore.transactions().length > 0) {
+              <div class="flex items-center justify-center py-3 text-[11px] text-content-disabled">
+                Todos os {{ treasuryStore.totalItems() }} lançamentos exibidos.
+              </div>
+            }
           </div>
         }
       </div>
+
+      <!-- Transaction Modal -->
+      @if (isModalOpen()) {
+        <app-transaction-modal
+          (close)="closeModal()"
+          (save)="onSaveTransaction($event)"
+        />
+      }
     </div>
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -397,6 +427,8 @@ interface AgingBucket {
 export class TreasuryComponent implements OnInit {
   protected readonly treasuryStore = inject(TreasuryStore);
   private readonly toastService = inject(ToastService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly SearchIcon = Search;
   protected readonly WalletIcon = Wallet;
@@ -417,40 +449,21 @@ export class TreasuryComponent implements OnInit {
   protected readonly searchQuery = signal('');
   protected readonly selectedType = signal<TransactionType | 'ALL'>('ALL');
   protected readonly selectedStatus = signal<TransactionStatus | 'ALL'>('ALL');
+  protected readonly isModalOpen = signal(false);
 
   /**
    * Computed Aging List buckets based on ALL transactions (not just filtered view).
-   * Only PENDING transactions are included in aging analysis.
+   * Relies on the globally decoupled store.aging() response.
    */
   protected readonly agingBuckets = computed<readonly AgingBucket[]>(() => {
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
+    const sum = (arr: TreasuryTransaction[] | undefined): number =>
+      arr ? arr.reduce((acc, t) => acc + t.amount, 0) : 0;
 
-    const pending = this.treasuryStore.transactions().filter((t) => t.status === 'PENDING');
-
-    const today: TreasuryTransaction[] = [];
-    const next7: TreasuryTransaction[] = [];
-    const next30: TreasuryTransaction[] = [];
-    const overdue: TreasuryTransaction[] = [];
-
-    for (const tx of pending) {
-      const due = new Date(tx.dueDate);
-      due.setHours(0, 0, 0, 0);
-      const diffDays = Math.round((due.getTime() - now.getTime()) / 86_400_000);
-
-      if (diffDays < 0) {
-        overdue.push(tx);
-      } else if (diffDays === 0) {
-        today.push(tx);
-      } else if (diffDays <= 7) {
-        next7.push(tx);
-      } else if (diffDays <= 30) {
-        next30.push(tx);
-      }
-    }
-
-    const sum = (arr: TreasuryTransaction[]): number =>
-      arr.reduce((acc, t) => acc + t.amount, 0);
+    const aging = this.treasuryStore.aging();
+    const overdue = aging?.overdue || [];
+    const today = aging?.today || [];
+    const next7 = aging?.next7 || [];
+    const next30 = aging?.next30 || [];
 
     return [
       {
@@ -458,7 +471,7 @@ export class TreasuryComponent implements OnInit {
         description: 'Contas com vencimento já ultrapassado',
         colorClass: 'text-state-danger',
         bgClass: 'bg-state-danger-subtle',
-        borderClass: 'border-state-danger/25',
+        borderClass: 'border-state-danger',
         transactions: overdue,
         total: sum(overdue),
       },
@@ -467,7 +480,7 @@ export class TreasuryComponent implements OnInit {
         description: 'Vencimento no dia de hoje',
         colorClass: 'text-state-warning',
         bgClass: 'bg-state-warning-subtle',
-        borderClass: 'border-state-warning/25',
+        borderClass: 'border-state-warning',
         transactions: today,
         total: sum(today),
       },
@@ -476,7 +489,7 @@ export class TreasuryComponent implements OnInit {
         description: 'Vencimento nos próximos 7 dias',
         colorClass: 'text-state-info',
         bgClass: 'bg-state-info-subtle',
-        borderClass: 'border-state-info/25',
+        borderClass: 'border-state-info',
         transactions: next7,
         total: sum(next7),
       },
@@ -485,7 +498,7 @@ export class TreasuryComponent implements OnInit {
         description: 'Vencimento nos próximos 8 a 30 dias',
         colorClass: 'text-state-success',
         bgClass: 'bg-state-success-subtle',
-        borderClass: 'border-state-success/25',
+        borderClass: 'border-state-success',
         transactions: next30,
         total: sum(next30),
       },
@@ -496,10 +509,45 @@ export class TreasuryComponent implements OnInit {
     if (this.treasuryStore.transactions().length === 0) {
       this.treasuryStore.loadTransactions();
     }
+
+    // Open modal automatically if ?action=new query param is present
+    this.route.queryParams
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((params) => {
+        if (params['action'] === 'new') {
+          this.openModal();
+        }
+      });
   }
 
   protected trackByTxId(_index: number, tx: TreasuryTransaction): string {
     return tx.id;
+  }
+
+  /** CDK Virtual Scroll — triggers loadMoreItems() when near end */
+  protected onScrolledIndexChange(index: number): void {
+    const txs = this.treasuryStore.transactions();
+    if (txs.length === 0) return;
+    if (index + 15 >= txs.length) {
+      this.treasuryStore.loadMoreItems();
+    }
+  }
+
+  protected openModal(): void {
+    this.isModalOpen.set(true);
+  }
+
+  protected closeModal(): void {
+    this.isModalOpen.set(false);
+  }
+
+  protected async onSaveTransaction(payload: TransactionFormValue): Promise<void> {
+    await this.treasuryStore.addTransaction(payload);
+    this.closeModal();
+    this.toastService.success(
+      'Lançamento Adicionado',
+      'Novo lançamento financeiro inserido no fluxo de caixa.'
+    );
   }
 
   protected onSearchChange(search: string): void {
@@ -535,23 +583,6 @@ export class TreasuryComponent implements OnInit {
     this.toastService.success(
       'Baixa efetuada',
       `O lançamento "${tx.description}" foi liquidado com sucesso.`
-    );
-  }
-
-  protected async simulateNewTransaction(): Promise<void> {
-    await this.treasuryStore.addTransaction({
-      description: 'Lançamento Manual de Exemplo B2B',
-      type: 'INCOME',
-      amount: 15500.0,
-      category: 'CLIENT_RECEIPT',
-      partnerId: 'PART-001',
-      partnerName: 'TechSupply Brasil Distribuidora Ltda',
-      status: 'PENDING',
-      dueDate: new Date().toISOString(),
-    });
-    this.toastService.success(
-      'Lançamento Adicionado',
-      'Novo lançamento financeiro inserido no fluxo de caixa.'
     );
   }
 }

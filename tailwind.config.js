@@ -14,38 +14,38 @@ module.exports = {
           secondary: '#38bdf8',
         },
 
-        // ── Canvas & Surfaces (Dark Corporativo) ──────────────────────────────
+        // ── Canvas & Surfaces (Dynamic via CSS vars) ─────────────────────────
         canvas: {
-          DEFAULT: '#09090b',
-          base: '#09090b',
-          surface: '#11141b',
-          elevated: '#181d27',
+          DEFAULT: 'var(--color-canvas)',
+          base: 'var(--color-canvas-base)',
+          surface: 'var(--color-canvas-surface)',
+          elevated: 'var(--color-canvas-elevated)',
         },
 
         // ── Borders & Dividers ────────────────────────────────────────────────
         border: {
-          subtle: '#222734',
-          strong: '#333b4f',
-          hover: '#2563eb',
+          subtle: 'var(--color-border-subtle)',
+          strong: 'var(--color-border-strong)',
+          hover: 'var(--color-border-hover)',
         },
 
         // ── Typography & Content ──────────────────────────────────────────────
         content: {
-          primary: '#f8fafc',
-          muted: '#94a3b8',
-          disabled: '#475569',
+          primary: 'var(--color-content-primary)',
+          muted: 'var(--color-content-muted)',
+          disabled: 'var(--color-content-disabled)',
         },
 
         // ── Semantic Operational States ───────────────────────────────────────
         state: {
-          success: '#10b981',
-          'success-subtle': 'rgba(16, 185, 129, 0.12)',
-          warning: '#f59e0b',
-          'warning-subtle': 'rgba(245, 158, 11, 0.12)',
-          danger: '#ef4444',
-          'danger-subtle': 'rgba(239, 68, 68, 0.12)',
-          info: '#0284c7',
-          'info-subtle': 'rgba(2, 132, 199, 0.12)',
+          success: 'var(--color-state-success)',
+          'success-subtle': 'var(--color-state-success-subtle)',
+          warning: 'var(--color-state-warning)',
+          'warning-subtle': 'var(--color-state-warning-subtle)',
+          danger: 'var(--color-state-danger)',
+          'danger-subtle': 'var(--color-state-danger-subtle)',
+          info: 'var(--color-state-info)',
+          'info-subtle': 'var(--color-state-info-subtle)',
         },
       },
 
@@ -72,12 +72,9 @@ module.exports = {
 
       // ── Box Shadows (elevation system) ───────────────────────────────────────
       boxShadow: {
-        'elevation-1':
-          '0 1px 3px 0 rgb(0 0 0 / 0.12), 0 1px 2px -1px rgb(0 0 0 / 0.12)',
-        'elevation-2':
-          '0 4px 6px -1px rgb(0 0 0 / 0.18), 0 2px 4px -2px rgb(0 0 0 / 0.12)',
-        'elevation-3':
-          '0 10px 15px -3px rgb(0 0 0 / 0.2), 0 4px 6px -4px rgb(0 0 0 / 0.15)',
+        'elevation-1': 'var(--shadow-elevation-1)',
+        'elevation-2': 'var(--shadow-elevation-2)',
+        'elevation-3': 'var(--shadow-elevation-3)',
         'brand-glow': '0 4px 24px 0 rgba(37, 99, 235, 0.28)',
       },
 

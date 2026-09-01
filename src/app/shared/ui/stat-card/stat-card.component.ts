@@ -33,8 +33,12 @@ export interface StatTrend {
         }
       </div>
 
-      <div class="mt-2 flex items-baseline justify-between gap-2">
-        <span class="text-2xl font-bold tracking-tight text-content-primary font-mono">
+      <div class="mt-2 flex items-baseline justify-between gap-2 min-w-0">
+        <span
+          class="text-2xl font-bold tracking-tight text-content-primary font-mono min-w-0 truncate"
+          [ngClass]="valueClass"
+          [title]="tooltipText || formattedValue"
+        >
           {{ formattedValue }}
         </span>
 
@@ -74,6 +78,10 @@ export class StatCardComponent {
   @Input() subtitle?: string;
   @Input() iconName?: string;
   @Input() icon?: LucideIconData;
+  /** Text shown as native HTML tooltip on hover over the value element */
+  @Input() tooltipText?: string;
+  /** Optional extra CSS classes applied to the value element (e.g. tabular-nums whitespace-nowrap) */
+  @Input() valueClass?: string | string[] | Record<string, boolean>;
 
   protected readonly TrendingUpIcon = TrendingUp;
   protected readonly TrendingDownIcon = TrendingDown;

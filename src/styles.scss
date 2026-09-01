@@ -25,20 +25,22 @@
   --color-brand-subtle:    rgba(37, 99, 235, 0.12);
   --color-brand-secondary: #38bdf8;
 
+  // ── LIGHT MODE defaults (app is light-first) ────────────────────────
   // Canvas & Surfaces
-  --color-canvas-base:     #09090b;
-  --color-canvas-surface:  #11141b;
-  --color-canvas-elevated: #181d27;
+  --color-canvas:          #f8fafc;
+  --color-canvas-base:     #f8fafc;
+  --color-canvas-surface:  #ffffff;
+  --color-canvas-elevated: #f1f5f9;
 
   // Borders
-  --color-border-subtle:   #222734;
-  --color-border-strong:   #333b4f;
+  --color-border-subtle:   #e2e8f0;
+  --color-border-strong:   #cbd5e1;
   --color-border-hover:    #2563eb;
 
   // Content / Typography
-  --color-content-primary:  #f8fafc;
-  --color-content-muted:    #94a3b8;
-  --color-content-disabled: #475569;
+  --color-content-primary:  #0f172a;
+  --color-content-muted:    #64748b;
+  --color-content-disabled: #94a3b8;
 
   // State — Operational Semantics
   --color-state-success:        #10b981;
@@ -75,11 +77,39 @@
   --transition-base: 250ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 350ms cubic-bezier(0.4, 0, 0.2, 1);
 
-  // Elevation Shadows (dark-optimised)
+  // Elevation Shadows (light-optimised)
+  --shadow-elevation-1: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.04);
+  --shadow-elevation-2: 0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.06);
+  --shadow-elevation-3: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.08);
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Dark Mode Token Overrides — activated by `.dark` on <html>
+// ─────────────────────────────────────────────────────────────────
+
+.dark {
+  --color-canvas:          #09090b;
+  --color-canvas-base:     #09090b;
+  --color-canvas-surface:  #11141b;
+  --color-canvas-elevated: #181d27;
+
+  --color-border-subtle:   #222734;
+  --color-border-strong:   #333b4f;
+  --color-border-hover:    #2563eb;
+
+  --color-content-primary:  #f8fafc;
+  --color-content-muted:    #94a3b8;
+  --color-content-disabled: #475569;
+
   --shadow-elevation-1: 0 1px 3px 0 rgb(0 0 0 / 0.12), 0 1px 2px -1px rgb(0 0 0 / 0.12);
   --shadow-elevation-2: 0 4px 6px -1px rgb(0 0 0 / 0.18), 0 2px 4px -2px rgb(0 0 0 / 0.12);
   --shadow-elevation-3: 0 10px 15px -3px rgb(0 0 0 / 0.2), 0 4px 6px -4px rgb(0 0 0 / 0.15);
+
+  background-color: var(--color-canvas-base);
+  color: var(--color-content-primary);
 }
+
+
 
 // ─────────────────────────────────────────────────────────────────
 // Global Base Reset
@@ -91,6 +121,11 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  // Smooth theming transition for Light/Dark mode toggle
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease,
+    color 0.3s ease;
 }
 
 html {

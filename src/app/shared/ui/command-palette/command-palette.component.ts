@@ -16,6 +16,13 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { fromEvent } from 'rxjs';
 import { filter } from 'rxjs/operators';
 import {
+  animate,
+  state,
+  style,
+  transition,
+  trigger,
+} from '@angular/animations';
+import {
   LucideAngularModule,
   Search,
   Package,
@@ -42,6 +49,18 @@ export interface PaletteCommand {
   selector: 'app-command-palette',
   standalone: true,
   imports: [CommonModule, FormsModule, LucideAngularModule],
+  animations: [
+    trigger('fadeInOut', [
+      state('void', style({ opacity: 0, transform: 'scale(0.95)' })),
+      state('*', style({ opacity: 1, transform: 'scale(1)' })),
+      transition('void => *', [
+        animate('150ms ease-out'),
+      ]),
+      transition('* => void', [
+        animate('100ms ease-in', style({ opacity: 0, transform: 'scale(0.95)' })),
+      ]),
+    ]),
+  ],
   template: `
     @if (isOpen()) {
       <!-- Backdrop -->
@@ -54,7 +73,8 @@ export interface PaletteCommand {
       >
         <!-- Panel -->
         <div
-          class="w-full max-w-2xl bg-canvas-elevated border border-border-strong rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-4 duration-200"
+          @fadeInOut
+          class="w-full max-w-2xl bg-canvas-elevated border border-border-strong rounded-2xl shadow-2xl overflow-hidden"
           (click)="$event.stopPropagation()"
         >
           <!-- Search Input -->
@@ -219,10 +239,7 @@ export class CommandPaletteComponent implements OnInit {
       description: 'Abre o modal de criação de produto no estoque',
       category: 'action',
       icon: 'Plus',
-      action: () => {
-        this.navigate('/inventory');
-        this.toastService.info('Ação', 'Navegue para o Estoque e clique em "Novo Produto".');
-      },
+      action: () => this.navigateWithAction('/inventory', 'new'),
     },
     {
       id: 'action-new-transaction',
@@ -230,10 +247,7 @@ export class CommandPaletteComponent implements OnInit {
       description: 'Adiciona um novo lançamento no fluxo de caixa',
       category: 'action',
       icon: 'Plus',
-      action: () => {
-        this.navigate('/treasury');
-        this.toastService.info('Ação', 'Navegue para a Tesouraria e clique em "Novo Lançamento".');
-      },
+      action: () => this.navigateWithAction('/treasury', 'new'),
     },
   ];
 
@@ -328,6 +342,11 @@ export class CommandPaletteComponent implements OnInit {
 
   private navigate(path: string): void {
     this.router.navigate([path]);
+  }
+
+  /** Navigates to a route and sets ?action= query param to trigger modal opening */
+  private navigateWithAction(path: string, action: string): void {
+    this.router.navigate([path], { queryParams: { action } });
   }
 
   private updateFilteredCommands(q: string): void {

@@ -1,6 +1,6 @@
 {
   "name": "axiom-erp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "SaaS B2B corporativo de gestão de supply chain, estoque multi-armazém e tesouraria desenvolvido em Angular moderno, Signals, Dexie.js (IndexedDB) e Tailwind CSS.",
   "author": "João Victor Carvalho de Souza (soudevictor) <trabalho.joaovictor2004@gmail.com>",
   "license": "MIT",
