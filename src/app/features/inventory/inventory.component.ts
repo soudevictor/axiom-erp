@@ -182,7 +182,7 @@ type SortableColumn = 'sku' | 'name' | 'quantity' | 'unitPrice' | 'status' | 'up
             <button
               type="button"
               (click)="clearFilters()"
-              class="px-3 py-2 rounded-lg text-xs font-medium text-state-danger hover:bg-state-danger-subtle border border-state-danger/20 transition-colors"
+              class="px-3 py-2 rounded-lg text-xs font-medium text-state-danger hover:bg-state-danger-subtle border border-state-danger transition-colors"
             >
               Limpar Filtros
             </button>
@@ -226,7 +226,7 @@ type SortableColumn = 'sku' | 'name' | 'quantity' | 'unitPrice' | 'status' | 'up
         <!-- 1. ERROR STATE -->
         @if (inventoryStore.error()) {
           <div
-            class="p-4 rounded-lg bg-state-danger-subtle border border-state-danger/30 flex items-center justify-between gap-4 text-state-danger"
+            class="p-4 rounded-lg bg-state-danger-subtle border border-state-danger flex items-center justify-between gap-4 text-state-danger"
             role="alert"
             aria-live="assertive"
           >
@@ -383,7 +383,7 @@ type SortableColumn = 'sku' | 'name' | 'quantity' | 'unitPrice' | 'status' | 'up
             >
               <div
                 *cdkVirtualFor="let item of inventoryStore.items(); trackBy: trackByItemId"
-                class="grid grid-cols-12 gap-4 px-4 py-2 h-12 border-b border-border-subtle/60 hover:bg-canvas-elevated text-xs items-center transition-colors"
+                class="grid grid-cols-12 gap-4 px-4 py-2 h-12 border-b border-border-subtle hover:bg-canvas-elevated text-xs items-center transition-colors"
                 [class.bg-brand-subtle]="isSelected(item.id)"
                 [class.border-brand]="isSelected(item.id)"
               >

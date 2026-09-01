@@ -93,7 +93,7 @@ const ROUTE_NAME_MAP: Record<string, string> = {
       <div class="flex items-center gap-3">
         <!-- IndexedDB Sync Badge -->
         <div
-          class="hidden sm:flex items-center gap-2 px-2 py-1 rounded-full bg-state-success-subtle border border-state-success/20 text-state-success text-xs font-medium"
+          class="hidden sm:flex items-center gap-2 px-2 py-1 rounded-full bg-state-success-subtle border border-state-success text-state-success text-xs font-medium"
           title="Banco IndexedDB ativo e sincronizado localmente"
         >
           <span class="relative flex h-2 w-2" aria-hidden="true">
@@ -161,7 +161,7 @@ const ROUTE_NAME_MAP: Record<string, string> = {
                   role="switch"
                 >
                   <span
-                    class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
+                    class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-canvas-surface shadow transition-transform"
                     [class.translate-x-5]="devService.slowLatency()"
                   ></span>
                 </button>
@@ -186,7 +186,7 @@ const ROUTE_NAME_MAP: Record<string, string> = {
                   role="switch"
                 >
                   <span
-                    class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
+                    class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-canvas-surface shadow transition-transform"
                     [class.translate-x-5]="devService.simulateError()"
                   ></span>
                 </button>
@@ -205,7 +205,7 @@ const ROUTE_NAME_MAP: Record<string, string> = {
                   type="button"
                   (click)="resetDatabase()"
                   [disabled]="resetting()"
-                  class="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-state-danger/30 text-state-danger text-xs font-medium hover:bg-state-danger-subtle disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-visible:ring-2 focus-visible:ring-state-danger"
+                  class="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-state-danger text-state-danger text-xs font-medium hover:bg-state-danger-subtle disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-visible:ring-2 focus-visible:ring-state-danger"
                 >
                   <lucide-icon [img]="RotateCcwIcon" [size]="14" [class.animate-spin]="resetting()" />
                   {{ resetting() ? 'Resetando…' : 'Resetar Base Local (Faker.js)' }}

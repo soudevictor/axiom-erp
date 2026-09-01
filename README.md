@@ -10,8 +10,6 @@
 
 SaaS B2B corporativo de gestão de cadeia de suprimentos, controle de estoque multi-armazém e tesouraria de alta densidade de dados. Projetado para demonstrar padrões arquiteturais avançados no ecossistema **Angular**, com foco em reatividade granular, performance de renderização (Zero CLS / INP otimizado), acessibilidade nativa e usabilidade corporativa anti-clichê de IA.
 
-> 🌐 **Deploy em Produção:** [axiom-erp.vercel.app](https://axiom-erp.vercel.app)
-
 ---
 
 ## 🎯 Arquitetura & Decisões Técnicas

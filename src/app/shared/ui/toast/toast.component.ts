@@ -78,9 +78,9 @@ export class ToastComponent {
   protected readonly XIcon = X;
 
   protected readonly containerClasses: Record<ToastType, string> = {
-    SUCCESS: 'bg-canvas-elevated border-state-success/30 text-content-primary',
-    WARNING: 'bg-canvas-elevated border-state-warning/30 text-content-primary',
-    ERROR:   'bg-canvas-elevated border-state-danger/30  text-content-primary',
-    INFO:    'bg-canvas-elevated border-state-info/30    text-content-primary',
+    SUCCESS: 'bg-canvas-elevated border-state-success text-content-primary',
+    WARNING: 'bg-canvas-elevated border-state-warning text-content-primary',
+    ERROR:   'bg-canvas-elevated border-state-danger  text-content-primary',
+    INFO:    'bg-canvas-elevated border-state-info    text-content-primary',
   };
 }

@@ -11,7 +11,7 @@ export type SkeletonShape = 'rectangle' | 'circle' | 'text';
     <div class="flex flex-col gap-2 w-full" aria-busy="true" aria-label="Carregando conteúdo">
       @for (item of items; track $index) {
         <div
-          class="animate-pulse bg-canvas-elevated border border-border-subtle/60 transition-all"
+          class="animate-pulse bg-canvas-elevated border border-border-subtle transition-all"
           [ngClass]="shapeClasses"
           [style.width]="width"
           [style.height]="height"

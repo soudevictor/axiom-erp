@@ -245,7 +245,7 @@ interface AgingBucket {
             <button
               type="button"
               (click)="clearFilters()"
-              class="px-3 py-2 rounded-lg text-xs font-medium text-state-danger hover:bg-state-danger-subtle border border-state-danger/20 transition-colors"
+              class="px-3 py-2 rounded-lg text-xs font-medium text-state-danger hover:bg-state-danger-subtle border border-state-danger transition-colors"
             >
               Limpar Filtros
             </button>
@@ -258,7 +258,7 @@ interface AgingBucket {
         <!-- 1. ERROR STATE -->
         @if (treasuryStore.error()) {
           <div
-            class="p-4 rounded-lg bg-state-danger-subtle border border-state-danger/30 flex items-center justify-between gap-4 text-state-danger"
+            class="p-4 rounded-lg bg-state-danger-subtle border border-state-danger flex items-center justify-between gap-4 text-state-danger"
             role="alert"
             aria-live="assertive"
           >
@@ -331,7 +331,7 @@ interface AgingBucket {
             >
               <div
                 *cdkVirtualFor="let tx of treasuryStore.transactions(); trackBy: trackByTxId"
-                class="grid grid-cols-12 gap-4 px-4 py-3 border-b border-border-subtle/60 hover:bg-canvas-elevated text-xs items-center transition-colors"
+                class="grid grid-cols-12 gap-4 px-4 py-3 border-b border-border-subtle hover:bg-canvas-elevated text-xs items-center transition-colors"
               >
                 <!-- Description & Partner -->
                 <div class="col-span-4 min-w-0">
@@ -471,7 +471,7 @@ export class TreasuryComponent implements OnInit {
         description: 'Contas com vencimento já ultrapassado',
         colorClass: 'text-state-danger',
         bgClass: 'bg-state-danger-subtle',
-        borderClass: 'border-state-danger/25',
+        borderClass: 'border-state-danger',
         transactions: overdue,
         total: sum(overdue),
       },
@@ -480,7 +480,7 @@ export class TreasuryComponent implements OnInit {
         description: 'Vencimento no dia de hoje',
         colorClass: 'text-state-warning',
         bgClass: 'bg-state-warning-subtle',
-        borderClass: 'border-state-warning/25',
+        borderClass: 'border-state-warning',
         transactions: today,
         total: sum(today),
       },
@@ -489,7 +489,7 @@ export class TreasuryComponent implements OnInit {
         description: 'Vencimento nos próximos 7 dias',
         colorClass: 'text-state-info',
         bgClass: 'bg-state-info-subtle',
-        borderClass: 'border-state-info/25',
+        borderClass: 'border-state-info',
         transactions: next7,
         total: sum(next7),
       },
@@ -498,7 +498,7 @@ export class TreasuryComponent implements OnInit {
         description: 'Vencimento nos próximos 8 a 30 dias',
         colorClass: 'text-state-success',
         bgClass: 'bg-state-success-subtle',
-        borderClass: 'border-state-success/25',
+        borderClass: 'border-state-success',
         transactions: next30,
         total: sum(next30),
       },

@@ -212,7 +212,7 @@ function cnpjValidator(control: { value: string }): { cnpjInvalid: boolean } | n
 
         <!-- Error State -->
         @else if (error()) {
-          <div class="p-4 rounded-lg bg-state-danger-subtle border border-state-danger/30 text-state-danger text-xs" role="alert">
+          <div class="p-4 rounded-lg bg-state-danger-subtle border border-state-danger text-state-danger text-xs" role="alert">
             {{ error() }}
             <button type="button" (click)="loadPartners()" class="ml-3 underline">Tentar novamente</button>
           </div>
@@ -232,7 +232,7 @@ function cnpjValidator(control: { value: string }): { cnpjInvalid: boolean } | n
                   <th class="py-3 px-4 text-center">Homologação</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-border-subtle/60 text-content-primary">
+              <tbody class="divide-y divide-border-subtle text-content-primary">
                 @if (filteredPartners().length === 0) {
                   <tr>
                     <td colspan="6" class="py-16 text-center text-content-muted">
