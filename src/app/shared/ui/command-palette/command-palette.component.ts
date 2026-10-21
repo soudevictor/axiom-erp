@@ -1,373 +1,247 @@
+import { A11yModule } from '@angular/cdk/a11y';
 import {
   ChangeDetectionStrategy,
   Component,
-  DestroyRef,
   ElementRef,
-  HostListener,
+  effect,
   inject,
-  OnInit,
+  input,
+  output,
   signal,
   viewChild,
 } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { fromEvent } from 'rxjs';
-import { filter } from 'rxjs/operators';
 import {
-  animate,
-  state,
-  style,
-  transition,
-  trigger,
-} from '@angular/animations';
-import {
-  LucideAngularModule,
-  Search,
-  Package,
-  Wallet,
-  Users,
   LayoutDashboard,
-  Plus,
-  ArrowRight,
-  Command,
+  LucideAngularModule,
+  Moon,
+  Package,
+  Search,
+  Sun,
+  Users,
+  Wallet,
 } from 'lucide-angular';
-import { ToastService } from '../toast/toast.service';
+import { ThemeService } from '@/core/services/theme.service';
 
-export interface PaletteCommand {
+interface Command {
   readonly id: string;
   readonly label: string;
   readonly description: string;
-  readonly category: 'navigation' | 'action';
-  readonly icon: string;
-  readonly action: () => void;
-  readonly shortcut?: string;
+  readonly group: 'Navegação' | 'Ação';
+  readonly icon: typeof LayoutDashboard;
+  readonly run: () => void;
 }
 
 @Component({
   selector: 'app-command-palette',
   standalone: true,
-  imports: [CommonModule, FormsModule, LucideAngularModule],
-  animations: [
-    trigger('fadeInOut', [
-      state('void', style({ opacity: 0, transform: 'scale(0.95)' })),
-      state('*', style({ opacity: 1, transform: 'scale(1)' })),
-      transition('void => *', [
-        animate('150ms ease-out'),
-      ]),
-      transition('* => void', [
-        animate('100ms ease-in', style({ opacity: 0, transform: 'scale(0.95)' })),
-      ]),
-    ]),
-  ],
+  imports: [A11yModule, LucideAngularModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    @if (isOpen()) {
-      <!-- Backdrop -->
-      <div
-        class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-start justify-center pt-[15vh] px-4"
-        (click)="onBackdropClick($event)"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Command Palette"
-      >
-        <!-- Panel -->
+    @if (open()) {
+      <div class="fixed inset-0 z-[60] flex items-start justify-center px-4 pt-[12vh]">
+        <button
+          type="button"
+          class="ui-scrim absolute inset-0"
+          aria-label="Fechar busca de comandos"
+          (click)="close()"
+        ></button>
+
         <div
-          @fadeInOut
-          class="w-full max-w-2xl bg-canvas-elevated border border-border-strong rounded-2xl shadow-2xl overflow-hidden"
-          (click)="$event.stopPropagation()"
+          class="relative w-full max-w-[560px] overflow-hidden rounded-lg border border-border-subtle bg-canvas-surface shadow-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="palette-title"
+          [cdkTrapFocus]="true"
+          [cdkTrapFocusAutoCapture]="true"
         >
-          <!-- Search Input -->
-          <div class="flex items-center gap-3 px-4 py-3 border-b border-border-subtle">
-            <lucide-icon [img]="SearchIcon" [size]="18" class="text-content-disabled shrink-0" />
+          <h2 id="palette-title" class="sr-only">Buscar comandos e páginas</h2>
+
+          <div class="flex items-center gap-2 border-b border-border-subtle px-3">
+            <lucide-icon [img]="Search" [size]="18" class="shrink-0 text-content-muted" />
             <input
-              #searchInput
-              id="command-palette-input"
+              #paletteInput
               type="text"
-              [ngModel]="query()"
-              (ngModelChange)="onQueryChange($event)"
-              placeholder="Buscar rotas, ações, SKUs ou parceiros..."
-              class="flex-1 bg-transparent text-sm text-content-primary placeholder-content-disabled outline-none"
-              aria-label="Busca de comandos e navegação"
-              autocomplete="off"
+              class="h-12 min-w-0 flex-1 bg-transparent text-sm text-content-primary outline-none placeholder:text-content-disabled"
+              placeholder="Buscar comandos e páginas…"
+              aria-label="Buscar comandos e páginas"
+              aria-controls="palette-results"
+              [attr.aria-activedescendant]="'palette-command-' + selectedIndex()"
+              (input)="onSearch($event)"
+              (keydown)="onKeydown($event)"
             />
-            <kbd
-              class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono text-content-disabled border border-border-strong"
-            >
+            <kbd class="rounded border border-border-subtle bg-canvas-elevated px-1.5 py-0.5 font-mono text-[10px] text-content-muted">
               Esc
             </kbd>
           </div>
 
-          <!-- Commands List -->
-          <div
-            class="max-h-[400px] overflow-y-auto overscroll-contain py-2"
-            role="listbox"
-            aria-label="Comandos disponíveis"
-          >
-            @if (filteredCommands().length === 0) {
-              <div class="py-10 text-center text-sm text-content-disabled">
-                Nenhum resultado para "{{ query() }}"
-              </div>
+          <div id="palette-results" class="max-h-[360px] overflow-y-auto p-1.5" role="listbox" aria-label="Comandos">
+            @if (filtered().length === 0) {
+              <p class="px-3 py-8 text-center text-sm text-content-muted">
+                Nenhum comando encontrado para “{{ search() }}”.
+              </p>
             } @else {
-              <!-- Group by category -->
-              @for (group of groupedCommands(); track group.category) {
-                <div class="px-3 py-1.5">
-                  <p class="text-[10px] font-semibold uppercase tracking-widest text-content-disabled mb-1">
-                    {{ group.label }}
-                  </p>
-                  @for (cmd of group.commands; track cmd.id; let i = $index) {
-                    <button
-                      type="button"
-                      (click)="executeCommand(cmd)"
-                      (mouseenter)="activeIndex.set(getGlobalIndex(group.category, i))"
-                      class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors focus-visible:ring-2 focus-visible:ring-brand text-xs"
-                      [class.bg-brand-subtle]="activeIndex() === getGlobalIndex(group.category, i)"
-                      [class.text-content-primary]="activeIndex() === getGlobalIndex(group.category, i)"
-                      [class.text-content-muted]="activeIndex() !== getGlobalIndex(group.category, i)"
-                      role="option"
-                      [attr.aria-selected]="activeIndex() === getGlobalIndex(group.category, i)"
-                    >
-                      <!-- Icon -->
-                      <span
-                        class="flex items-center justify-center w-8 h-8 rounded-lg shrink-0 transition-colors"
-                        [class.bg-brand]="activeIndex() === getGlobalIndex(group.category, i)"
-                        [class.bg-canvas-surface]="activeIndex() !== getGlobalIndex(group.category, i)"
-                      >
-                        <lucide-icon [name]="cmd.icon" [size]="16" class="text-content-primary" />
-                      </span>
-
-                      <!-- Text -->
-                      <span class="flex-1 min-w-0">
-                        <span class="block font-medium text-content-primary">{{ cmd.label }}</span>
-                        <span class="block text-[11px] text-content-disabled truncate">{{ cmd.description }}</span>
-                      </span>
-
-                      <!-- Shortcut or arrow -->
-                      @if (cmd.shortcut) {
-                        <kbd class="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-mono text-content-disabled border border-border-subtle">
-                          {{ cmd.shortcut }}
-                        </kbd>
-                      } @else {
-                        <lucide-icon [img]="ArrowRightIcon" [size]="14" class="text-content-disabled opacity-0 group-hover:opacity-100 transition-opacity" />
-                      }
-                    </button>
-                  }
-                </div>
+              @for (command of filtered(); track command.id; let index = $index) {
+                <button
+                  type="button"
+                  role="option"
+                  [id]="'palette-command-' + index"
+                  [attr.aria-selected]="index === selectedIndex()"
+                  class="flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors"
+                  [class]="index === selectedIndex() ? 'bg-brand-subtle text-content-primary' : 'text-content-primary hover:bg-canvas-elevated'"
+                  (mouseenter)="selectedIndex.set(index)"
+                  (click)="execute(command)"
+                >
+                  <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border-subtle bg-canvas-elevated text-content-muted">
+                    <lucide-icon [img]="command.icon" [size]="16" />
+                  </span>
+                  <span class="min-w-0 flex-1">
+                    <span class="block text-sm font-medium">{{ command.label }}</span>
+                    <span class="block truncate text-xs text-content-muted">{{ command.description }}</span>
+                  </span>
+                  <span class="font-mono text-[10px] uppercase tracking-wide text-content-disabled">{{ command.group }}</span>
+                </button>
               }
             }
           </div>
 
-          <!-- Footer -->
-          <div class="px-4 py-2 border-t border-border-subtle flex items-center gap-4 text-[11px] text-content-disabled">
-            <span class="flex items-center gap-1">
-              <kbd class="px-1.5 py-0.5 rounded border border-border-strong font-mono">↑↓</kbd>
-              <span>Navegar</span>
-            </span>
-            <span class="flex items-center gap-1">
-              <kbd class="px-1.5 py-0.5 rounded border border-border-strong font-mono">Enter</kbd>
-              <span>Executar</span>
-            </span>
-            <span class="flex items-center gap-1">
-              <kbd class="px-1.5 py-0.5 rounded border border-border-strong font-mono">Esc</kbd>
-              <span>Fechar</span>
-            </span>
-            <span class="ml-auto flex items-center gap-1.5">
-              <lucide-icon [img]="CommandIcon" [size]="12" />
-              <span>Axiom Command Palette</span>
-            </span>
+          <div class="flex items-center gap-3 border-t border-border-subtle px-3 py-2 font-mono text-[10px] text-content-disabled">
+            <span>↑↓ navegar</span>
+            <span>Enter abrir</span>
+            <span class="ml-auto">AxiomERP</span>
           </div>
         </div>
       </div>
     }
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class CommandPaletteComponent implements OnInit {
+export class CommandPaletteComponent {
+  readonly open = input(false);
+  readonly closed = output<void>();
+
+  protected readonly search = signal('');
+  protected readonly selectedIndex = signal(0);
+
   private readonly router = inject(Router);
-  private readonly toastService = inject(ToastService);
-  private readonly destroyRef = inject(DestroyRef);
+  private readonly theme = inject(ThemeService);
+  private readonly paletteInput = viewChild<ElementRef<HTMLInputElement>>('paletteInput');
+  private lastFocused: HTMLElement | null = null;
 
-  protected readonly searchInput = viewChild<ElementRef<HTMLInputElement>>('searchInput');
+  protected readonly Search = Search;
 
-  protected readonly SearchIcon = Search;
-  protected readonly ArrowRightIcon = ArrowRight;
-  protected readonly CommandIcon = Command;
-
-  readonly isOpen = signal(false);
-  protected readonly query = signal('');
-  protected readonly activeIndex = signal(0);
-
-  private readonly ALL_COMMANDS: readonly PaletteCommand[] = [
+  private readonly commands: readonly Command[] = [
     {
-      id: 'nav-dashboard',
-      label: 'Ir para Dashboard',
-      description: 'Painel principal com KPIs e visão geral',
-      category: 'navigation',
-      icon: 'LayoutDashboard',
-      action: () => this.navigate('/dashboard'),
+      id: 'dashboard',
+      label: 'Ir para o painel',
+      description: 'Visão geral de estoque, caixa e alertas.',
+      group: 'Navegação',
+      icon: LayoutDashboard,
+      run: () => this.navigate('/dashboard'),
     },
     {
-      id: 'nav-inventory',
-      label: 'Ir para Estoque',
-      description: 'Gestão de inventário multi-armazém',
-      category: 'navigation',
-      icon: 'Package',
-      action: () => this.navigate('/inventory'),
-      shortcut: 'Alt+I',
+      id: 'inventory',
+      label: 'Ir para o estoque',
+      description: 'Produtos, saldos e movimentações.',
+      group: 'Navegação',
+      icon: Package,
+      run: () => this.navigate('/inventory'),
     },
     {
-      id: 'nav-treasury',
-      label: 'Ir para Tesouraria',
-      description: 'Fluxo de caixa e contas a pagar/receber',
-      category: 'navigation',
-      icon: 'Wallet',
-      action: () => this.navigate('/treasury'),
-      shortcut: 'Alt+T',
+      id: 'treasury',
+      label: 'Ir para a tesouraria',
+      description: 'Contas a pagar, receber e fluxo de caixa.',
+      group: 'Navegação',
+      icon: Wallet,
+      run: () => this.navigate('/treasury'),
     },
     {
-      id: 'nav-partners',
-      label: 'Ir para Parceiros B2B',
-      description: 'Cadastro de fornecedores e clientes',
-      category: 'navigation',
-      icon: 'Users',
-      action: () => this.navigate('/partners'),
-      shortcut: 'Alt+P',
+      id: 'partners',
+      label: 'Ir para parceiros',
+      description: 'Fornecedores, clientes e homologação.',
+      group: 'Navegação',
+      icon: Users,
+      run: () => this.navigate('/partners'),
     },
     {
-      id: 'action-new-product',
-      label: 'Cadastrar Novo Produto',
-      description: 'Abre o modal de criação de produto no estoque',
-      category: 'action',
-      icon: 'Plus',
-      action: () => this.navigateWithAction('/inventory', 'new'),
-    },
-    {
-      id: 'action-new-transaction',
-      label: 'Nova Transação Financeira',
-      description: 'Adiciona um novo lançamento no fluxo de caixa',
-      category: 'action',
-      icon: 'Plus',
-      action: () => this.navigateWithAction('/treasury', 'new'),
+      id: 'theme',
+      label: 'Alternar tema claro e escuro',
+      description: 'Muda a aparência desta sessão.',
+      group: 'Ação',
+      icon: this.theme.mode() === 'dark' ? Sun : Moon,
+      run: () => {
+        this.theme.toggle();
+        this.close();
+      },
     },
   ];
 
-  protected readonly filteredCommands = signal<readonly PaletteCommand[]>(this.ALL_COMMANDS);
-  protected readonly groupedCommands = signal<
-    readonly { category: string; label: string; commands: readonly PaletteCommand[] }[]
-  >([]);
+  protected readonly filtered = signal<readonly Command[]>(this.commands);
 
-  ngOnInit(): void {
-    // Listen for Ctrl+K / Cmd+K globally
-    fromEvent<KeyboardEvent>(document, 'keydown')
-      .pipe(
-        filter((e) => (e.ctrlKey || e.metaKey) && e.key === 'k'),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe((e) => {
-        e.preventDefault();
-        this.open();
-      });
-
-    this.updateFilteredCommands('');
+  constructor() {
+    effect(() => {
+      if (this.open()) {
+        this.lastFocused = document.activeElement as HTMLElement | null;
+        this.search.set('');
+        this.selectedIndex.set(0);
+        this.filtered.set(this.commands);
+        window.setTimeout(() => this.paletteInput()?.nativeElement.focus(), 0);
+      } else if (this.lastFocused) {
+        this.lastFocused.focus();
+        this.lastFocused = null;
+      }
+    });
   }
 
-  @HostListener('document:keydown', ['$event'])
-  onKeyDown(event: KeyboardEvent): void {
-    if (!this.isOpen()) return;
+  protected onSearch(event: Event): void {
+    const value = (event.target as HTMLInputElement).value;
+    this.search.set(value);
+    const normalized = value.trim().toLowerCase();
+    const matches = this.commands.filter(
+      (command) =>
+        command.label.toLowerCase().includes(normalized) ||
+        command.description.toLowerCase().includes(normalized)
+    );
+    this.filtered.set(matches);
+    this.selectedIndex.set(0);
+  }
 
-    const cmds = this.filteredCommands();
-
-    switch (event.key) {
-      case 'Escape':
-        this.close();
-        break;
-      case 'ArrowDown':
+  protected onKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.close();
+      return;
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      const length = this.filtered().length;
+      if (length > 0) this.selectedIndex.update((index) => (index + 1) % length);
+      return;
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      const length = this.filtered().length;
+      if (length > 0) this.selectedIndex.update((index) => (index - 1 + length) % length);
+      return;
+    }
+    if (event.key === 'Enter') {
+      const command = this.filtered()[this.selectedIndex()];
+      if (command) {
         event.preventDefault();
-        this.activeIndex.set((this.activeIndex() + 1) % Math.max(1, cmds.length));
-        break;
-      case 'ArrowUp':
-        event.preventDefault();
-        this.activeIndex.set(
-          (this.activeIndex() - 1 + Math.max(1, cmds.length)) % Math.max(1, cmds.length)
-        );
-        break;
-      case 'Enter': {
-        const active = cmds[this.activeIndex()];
-        if (active) this.executeCommand(active);
-        break;
+        this.execute(command);
       }
     }
   }
 
-  open(): void {
-    this.query.set('');
-    this.activeIndex.set(0);
-    this.updateFilteredCommands('');
-    this.isOpen.set(true);
-    setTimeout(() => this.searchInput()?.nativeElement.focus(), 50);
+  protected execute(command: Command): void {
+    command.run();
   }
 
-  close(): void {
-    this.isOpen.set(false);
-    this.query.set('');
-  }
-
-  protected onQueryChange(value: string): void {
-    this.query.set(value);
-    this.activeIndex.set(0);
-    this.updateFilteredCommands(value);
-  }
-
-  protected executeCommand(cmd: PaletteCommand): void {
-    this.close();
-    cmd.action();
-  }
-
-  protected onBackdropClick(event: MouseEvent): void {
-    if (event.target === event.currentTarget) {
-      this.close();
-    }
-  }
-
-  /** Returns the global flat index for keyboard navigation, across all groups. */
-  protected getGlobalIndex(category: string, indexInGroup: number): number {
-    const groups = this.groupedCommands();
-    let offset = 0;
-    for (const g of groups) {
-      if (g.category === category) return offset + indexInGroup;
-      offset += g.commands.length;
-    }
-    return indexInGroup;
+  protected close(): void {
+    this.closed.emit();
   }
 
   private navigate(path: string): void {
-    this.router.navigate([path]);
-  }
-
-  /** Navigates to a route and sets ?action= query param to trigger modal opening */
-  private navigateWithAction(path: string, action: string): void {
-    this.router.navigate([path], { queryParams: { action } });
-  }
-
-  private updateFilteredCommands(q: string): void {
-    const lower = q.toLowerCase().trim();
-    const filtered = lower
-      ? this.ALL_COMMANDS.filter(
-          (c) =>
-            c.label.toLowerCase().includes(lower) ||
-            c.description.toLowerCase().includes(lower)
-        )
-      : this.ALL_COMMANDS;
-
-    this.filteredCommands.set(filtered);
-
-    const navCommands = filtered.filter((c) => c.category === 'navigation');
-    const actionCommands = filtered.filter((c) => c.category === 'action');
-
-    const groups: { category: string; label: string; commands: readonly PaletteCommand[] }[] = [];
-    if (navCommands.length > 0) groups.push({ category: 'navigation', label: 'Navegação', commands: navCommands });
-    if (actionCommands.length > 0) groups.push({ category: 'action', label: 'Ações Rápidas', commands: actionCommands });
-
-    this.groupedCommands.set(groups);
+    void this.router.navigateByUrl(path);
+    this.close();
   }
 }

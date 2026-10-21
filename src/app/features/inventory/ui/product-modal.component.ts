@@ -1,351 +1,331 @@
 import {
   ChangeDetectionStrategy,
   Component,
-  EventEmitter,
-  Input,
-  OnInit,
-  Output,
+  computed,
+  effect,
   inject,
+  input,
+  output,
   signal,
 } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import {
-  AbstractControl,
   FormBuilder,
-  FormGroup,
   ReactiveFormsModule,
-  ValidationErrors,
   Validators,
+  type AbstractControl,
+  type ValidationErrors,
 } from '@angular/forms';
-import { HttpClient } from '@angular/common/http';
-import { LucideAngularModule, X, Save } from 'lucide-angular';
-import { applyBrlMask, parseBrl } from '@/shared/utils/currency-formatter';
-import type {
-  InventoryCategory,
-  InventoryItem,
-  InventoryStatus,
+import { LucideAngularModule, PackagePlus } from 'lucide-angular';
+import {
+  INVENTORY_CATEGORIES,
+  INVENTORY_CATEGORY_LABELS,
+  type CreateInventoryItem,
+  type InventoryCategory,
+  type InventoryItem,
+  type UpdateInventoryItem,
 } from '@/core/models/inventory.model';
-import type { PaginatedResponse } from '@/core/models/pagination.model';
+import { WAREHOUSES } from '@/core/models/warehouse.model';
+import { InventoryStore } from '@/features/inventory/data-access/inventory.store';
+import { ModalComponent } from '@/shared/ui/modal/modal.component';
+
+function integerValidator(min: number) {
+  return (control: AbstractControl): ValidationErrors | null => {
+    const value = Number(control.value);
+    if (!Number.isInteger(value) || value < min) return { integer: true };
+    return null;
+  };
+}
+
+function messageFrom(error: unknown, fallback: string): string {
+  if (error instanceof HttpErrorResponse) {
+    const body = error.error as { message?: string } | null;
+    return body?.message ?? fallback;
+  }
+  return error instanceof Error ? error.message : fallback;
+}
+
+function errorCode(error: unknown): string | null {
+  if (error instanceof HttpErrorResponse) {
+    const body = error.error as { code?: string } | null;
+    return body?.code ?? null;
+  }
+  return null;
+}
 
 @Component({
   selector: 'app-product-modal',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, LucideAngularModule],
+  imports: [ReactiveFormsModule, LucideAngularModule, ModalComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div
-      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in"
-      (click)="onBackdropClick($event)"
-      (keydown.escape)="close.emit()"
-      tabindex="-1"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="modal-title"
+    <app-modal
+      [open]="open()"
+      [title]="item() ? 'Editar produto' : 'Novo produto'"
+      [description]="item()?.sku ?? 'Cadastre um SKU e defina o saldo inicial.'"
+      maxWidth="680px"
+      (closed)="closed.emit()"
     >
-      <div
-        class="relative w-full max-w-xl p-6 bg-canvas-elevated border border-border-strong rounded-xl shadow-2xl space-y-6 text-content-primary"
-        (click)="$event.stopPropagation()"
-      >
-        <!-- Modal Header -->
-        <div class="flex items-center justify-between pb-4 border-b border-border-subtle">
-          <h2 id="modal-title" class="text-lg font-bold text-content-primary tracking-tight">
-            {{ isEditing ? 'Editar Produto em Estoque' : 'Novo Produto em Estoque' }}
-          </h2>
-          <button
-            type="button"
-            (click)="close.emit()"
-            class="p-1.5 rounded-lg text-content-muted hover:text-content-primary hover:bg-canvas-surface transition-colors"
-            aria-label="Fechar janela"
-          >
-            <lucide-icon [img]="XIcon" [size]="18" />
-          </button>
-        </div>
+      <form id="product-form" [formGroup]="form" (ngSubmit)="submit()" class="space-y-4">
+        @if (serverError()) {
+          <div class="rounded-md border border-state-danger/30 bg-state-danger-subtle px-3 py-2" role="alert">
+            <p class="text-sm text-state-danger">{{ serverError() }}</p>
+          </div>
+        }
 
-        <!-- Form -->
-        <form [formGroup]="form" (ngSubmit)="onSubmit()" class="space-y-4">
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <!-- SKU with async validation -->
-            <div>
-              <label for="sku" class="block text-xs font-semibold text-content-muted uppercase tracking-wider mb-1">
-                SKU *
-              </label>
-              <input
-                id="sku"
-                type="text"
-                formControlName="sku"
-                placeholder="Ex: ELE-A1B2-1001"
-                class="w-full px-3 py-2 rounded-lg bg-canvas-base border border-border-strong text-xs text-content-primary focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand font-mono transition-colors"
-                [attr.aria-invalid]="form.get('sku')?.touched && form.get('sku')?.invalid ? 'true' : null"
-                aria-describedby="sku-error"
-              />
-              @if (form.get('sku')?.touched && form.get('sku')?.invalid) {
-                <span id="sku-error" class="text-[11px] text-state-danger mt-1 block" role="alert">
-                  @if (form.get('sku')?.errors?.['required']) {
-                    SKU é obrigatório.
-                  } @else if (form.get('sku')?.errors?.['minlength']) {
-                    SKU deve ter ao menos 3 caracteres.
-                  } @else if (form.get('sku')?.errors?.['skuDuplicate']) {
-                    Este SKU já está cadastrado no estoque.
-                  }
-                </span>
-              }
-              @if (form.get('sku')?.pending) {
-                <span class="text-[11px] text-content-muted mt-1 block">Verificando disponibilidade do SKU…</span>
-              }
-            </div>
-
-            <!-- Category -->
-            <div>
-              <label for="category" class="block text-xs font-semibold text-content-muted uppercase tracking-wider mb-1">
-                Categoria *
-              </label>
-              <select
-                id="category"
-                formControlName="category"
-                class="w-full px-3 py-2 rounded-lg bg-canvas-base border border-border-strong text-xs text-content-primary focus:outline-none focus:border-brand transition-colors"
-              >
-                <option value="ELECTRONICS">Eletrônicos</option>
-                <option value="HARDWARE">Hardware</option>
-                <option value="LOGISTICS">Logística</option>
-                <option value="OFFICE">Escritório</option>
-              </select>
-            </div>
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label for="product-sku" class="ui-label">SKU <span class="text-state-danger">*</span></label>
+            <input
+              id="product-sku"
+              type="text"
+              formControlName="sku"
+              class="ui-field font-mono uppercase"
+              maxlength="24"
+              autocomplete="off"
+              placeholder="ELE-A001-0501"
+              data-autofocus
+              (input)="normalizeSku($event)"
+              [attr.aria-invalid]="skuInvalid()"
+              [attr.aria-describedby]="skuInvalid() ? 'product-sku-error' : null"
+            />
+            @if (skuInvalid()) {
+              <p id="product-sku-error" class="mt-1 text-xs text-state-danger">
+                {{ skuServerError() ?? 'Use o formato ABC-1234-0000.' }}
+              </p>
+            } @else {
+              <p class="mt-1 text-xs text-content-muted">Identificador único do produto no catálogo.</p>
+            }
           </div>
 
-          <!-- Name -->
           <div>
-            <label for="name" class="block text-xs font-semibold text-content-muted uppercase tracking-wider mb-1">
-              Nome do Produto *
-            </label>
+            <label for="product-category" class="ui-label">Categoria <span class="text-state-danger">*</span></label>
+            <select id="product-category" formControlName="category" class="ui-field">
+              @for (category of categories; track category) {
+                <option [value]="category">{{ categoryLabels[category] }}</option>
+              }
+            </select>
+          </div>
+
+          <div class="sm:col-span-2">
+            <label for="product-name" class="ui-label">Nome do produto <span class="text-state-danger">*</span></label>
             <input
-              id="name"
+              id="product-name"
               type="text"
               formControlName="name"
-              placeholder="Ex: Cabo HDMI 2.1 Ultra High Speed 2m"
-              class="w-full px-3 py-2 rounded-lg bg-canvas-base border border-border-strong text-xs text-content-primary focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors"
-              [attr.aria-invalid]="form.get('name')?.touched && form.get('name')?.invalid ? 'true' : null"
-              aria-describedby="name-error"
+              class="ui-field"
+              maxlength="120"
+              autocomplete="off"
+              [attr.aria-invalid]="form.controls.name.touched && form.controls.name.invalid"
             />
-            @if (form.get('name')?.touched && form.get('name')?.invalid) {
-              <span id="name-error" class="text-[11px] text-state-danger mt-1 block" role="alert">
-                Nome deve ter ao menos 3 caracteres.
-              </span>
+            @if (form.controls.name.touched && form.controls.name.invalid) {
+              <p class="mt-1 text-xs text-state-danger">Informe um nome com pelo menos 3 caracteres.</p>
             }
           </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <!-- Warehouse -->
-            <div>
-              <label for="warehouseId" class="block text-xs font-semibold text-content-muted uppercase tracking-wider mb-1">
-                Armazém *
-              </label>
-              <select
-                id="warehouseId"
-                formControlName="warehouseId"
-                class="w-full px-3 py-2 rounded-lg bg-canvas-base border border-border-strong text-xs text-content-primary focus:outline-none focus:border-brand transition-colors"
-              >
-                <option value="WH-SP-001">WH-SP-001 (São Paulo)</option>
-                <option value="WH-RJ-002">WH-RJ-002 (Rio de Janeiro)</option>
-                <option value="WH-MG-003">WH-MG-003 (Belo Horizonte)</option>
-                <option value="WH-PR-004">WH-PR-004 (Curitiba)</option>
-                <option value="WH-RS-005">WH-RS-005 (Porto Alegre)</option>
-              </select>
-            </div>
-
-            <!-- Quantity -->
-            <div>
-              <label for="quantity" class="block text-xs font-semibold text-content-muted uppercase tracking-wider mb-1">
-                Quantidade *
-              </label>
-              <input
-                id="quantity"
-                type="number"
-                min="0"
-                formControlName="quantity"
-                class="w-full px-3 py-2 rounded-lg bg-canvas-base border border-border-strong text-xs text-content-primary focus:outline-none focus:border-brand transition-colors"
-              />
-            </div>
-
-            <!-- Min Threshold -->
-            <div>
-              <label for="minThreshold" class="block text-xs font-semibold text-content-muted uppercase tracking-wider mb-1">
-                Estoque Mínimo *
-              </label>
-              <input
-                id="minThreshold"
-                type="number"
-                min="1"
-                formControlName="minThreshold"
-                class="w-full px-3 py-2 rounded-lg bg-canvas-base border border-border-strong text-xs text-content-primary focus:outline-none focus:border-brand transition-colors"
-              />
-            </div>
-          </div>
-
-          <!-- Unit Price with BRL mask -->
           <div>
-            <label for="unitPriceDisplay" class="block text-xs font-semibold text-content-muted uppercase tracking-wider mb-1">
-              Preço Unitário *
-            </label>
+            <label for="product-warehouse" class="ui-label">Armazém <span class="text-state-danger">*</span></label>
+            <select id="product-warehouse" formControlName="warehouseId" class="ui-field">
+              @for (warehouse of warehouses; track warehouse.id) {
+                <option [value]="warehouse.id">{{ warehouse.name }} · {{ warehouse.state }}</option>
+              }
+            </select>
+          </div>
+
+          <div>
+            <label for="product-min" class="ui-label">Estoque mínimo <span class="text-state-danger">*</span></label>
             <input
-              id="unitPriceDisplay"
-              type="text"
+              id="product-min"
+              type="number"
               inputmode="numeric"
-              [value]="unitPriceDisplay()"
-              (input)="onPriceInput($event)"
-              placeholder="R$ 0,00"
-              class="w-full px-3 py-2 rounded-lg bg-canvas-base border border-border-strong text-xs text-content-primary focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand font-mono transition-colors"
-              aria-label="Preço unitário em reais"
-              [attr.aria-invalid]="form.get('unitPrice')?.touched && form.get('unitPrice')?.invalid ? 'true' : null"
+              min="0"
+              step="1"
+              formControlName="minThreshold"
+              class="ui-field font-mono tabular-nums"
             />
-            @if (form.get('unitPrice')?.touched && form.get('unitPrice')?.invalid) {
-              <span class="text-[11px] text-state-danger mt-1 block" role="alert">
-                Preço deve ser maior que R$ 0,00.
-              </span>
+          </div>
+
+          <div>
+            <label for="product-price" class="ui-label">Preço unitário (R$) <span class="text-state-danger">*</span></label>
+            <input
+              id="product-price"
+              type="number"
+              min="0.01"
+              step="0.01"
+              formControlName="unitPrice"
+              class="ui-field font-mono tabular-nums"
+              [attr.aria-invalid]="form.controls.unitPrice.touched && form.controls.unitPrice.invalid"
+            />
+            @if (form.controls.unitPrice.touched && form.controls.unitPrice.invalid) {
+              <p class="mt-1 text-xs text-state-danger">O preço deve ser maior que zero.</p>
             }
           </div>
 
-          <!-- Actions -->
-          <div class="flex items-center justify-end gap-3 pt-4 border-t border-border-subtle">
-            <button
-              type="button"
-              (click)="close.emit()"
-              class="px-4 py-2 rounded-lg text-xs font-medium text-content-muted hover:text-content-primary hover:bg-canvas-surface transition-colors"
-            >
-              Cancelar
-            </button>
+          @if (!item()) {
+            <div>
+              <label for="product-quantity" class="ui-label">Saldo inicial <span class="text-state-danger">*</span></label>
+              <input
+                id="product-quantity"
+                type="number"
+                inputmode="numeric"
+                min="0"
+                step="1"
+                formControlName="quantity"
+                class="ui-field font-mono tabular-nums"
+              />
+              <p class="mt-1 text-xs text-content-muted">Depois, o saldo só muda por movimentação.</p>
+            </div>
+          } @else {
+            <div>
+              <p class="ui-label">Saldo atual</p>
+              <div class="flex h-9 items-center justify-between gap-2 rounded-md border border-border-subtle bg-canvas-elevated px-3">
+                <span class="font-mono text-sm font-medium tabular-nums text-content-primary">{{ item()?.quantity }}</span>
+                <button
+                  type="button"
+                  class="inline-flex h-7 items-center gap-1 rounded px-1.5 text-xs font-medium text-brand hover:bg-brand-subtle disabled:cursor-not-allowed disabled:opacity-50"
+                  [disabled]="form.dirty"
+                  [title]="form.dirty ? 'Salve as alterações antes de movimentar' : 'Abrir movimentação'"
+                  (click)="requestMovement()"
+                >
+                  <lucide-icon [img]="PackagePlus" [size]="14" />
+                  Movimentar
+                </button>
+              </div>
+              <p class="mt-1 text-xs text-content-muted">O saldo é alterado apenas pelo ledger de movimentações.</p>
+            </div>
+          }
+        </div>
 
-            <button
-              type="submit"
-              [disabled]="form.invalid || form.pending || isSaving()"
-              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium text-xs shadow-brand-glow transition-colors focus-visible:ring-2 focus-visible:ring-brand"
-            >
-              <lucide-icon [img]="SaveIcon" [size]="16" />
-              <span>{{ isSaving() ? 'Salvando…' : 'Salvar Produto' }}</span>
-            </button>
+        @if (!item()) {
+          <div class="rounded-md bg-canvas-elevated px-3 py-2.5">
+            <p class="text-xs text-content-muted">
+              O saldo inicial gera uma movimentação de entrada no histórico do produto.
+            </p>
           </div>
-        </form>
+        }
+      </form>
+
+      <div modal-footer class="flex justify-end gap-2 px-4 py-3 sm:px-5">
+        <button type="button" class="ui-btn" [disabled]="store.saving()" (click)="closed.emit()">Cancelar</button>
+        <button type="submit" form="product-form" class="ui-btn ui-btn-primary" [disabled]="store.saving()">
+          {{ store.saving() ? 'Salvando…' : item() ? 'Salvar alterações' : 'Cadastrar produto' }}
+        </button>
       </div>
-    </div>
+    </app-modal>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class ProductModalComponent implements OnInit {
-  @Input() itemToEdit?: InventoryItem | null;
-  @Output() close = new EventEmitter<void>();
-  @Output() save = new EventEmitter<Omit<InventoryItem, 'id' | 'updatedAt' | 'status'>>();
+export class ProductModalComponent {
+  readonly open = input(false);
+  readonly item = input<InventoryItem | null>(null);
+  readonly closed = output<void>();
+  readonly saved = output<InventoryItem>();
+  readonly movementRequested = output<InventoryItem>();
 
+  protected readonly store = inject(InventoryStore);
   private readonly fb = inject(FormBuilder);
-  private readonly http = inject(HttpClient);
 
-  protected readonly XIcon = X;
-  protected readonly SaveIcon = Save;
+  protected readonly categories = INVENTORY_CATEGORIES;
+  protected readonly categoryLabels = INVENTORY_CATEGORY_LABELS;
+  protected readonly warehouses = WAREHOUSES;
+  protected readonly PackagePlus = PackagePlus;
 
-  protected form!: FormGroup;
-  protected readonly isSaving = signal(false);
-  protected readonly unitPriceDisplay = signal('R$ 0,00');
+  protected readonly serverError = signal<string | null>(null);
+  protected readonly skuServerError = signal<string | null>(null);
 
-  get isEditing(): boolean {
-    return !!this.itemToEdit;
-  }
-
-  ngOnInit(): void {
-    const initialPrice = this.itemToEdit?.unitPrice ?? 49.9;
-    this.unitPriceDisplay.set(
-      new Intl.NumberFormat('pt-BR', {
-        style: 'currency',
-        currency: 'BRL',
-      }).format(initialPrice)
-    );
-
-    this.form = this.fb.group({
-      sku: [
-        this.itemToEdit?.sku ?? '',
-        [Validators.required, Validators.minLength(3)],
-        [this.asyncSkuValidator(this.itemToEdit?.sku)],
+  protected readonly form = this.fb.nonNullable.group({
+    sku: [
+      '',
+      [
+        Validators.required,
+        Validators.minLength(3),
+        Validators.maxLength(24),
+        Validators.pattern(/^[A-Z]{3}-[A-Z0-9]{4}-\d{4}$/),
       ],
-      name: [this.itemToEdit?.name ?? '', [Validators.required, Validators.minLength(3)]],
-      category: [this.itemToEdit?.category ?? 'ELECTRONICS', [Validators.required]],
-      warehouseId: [this.itemToEdit?.warehouseId ?? 'WH-SP-001', [Validators.required]],
-      quantity: [this.itemToEdit?.quantity ?? 100, [Validators.required, Validators.min(0)]],
-      minThreshold: [this.itemToEdit?.minThreshold ?? 10, [Validators.required, Validators.min(1)]],
-      unitPrice: [initialPrice, [Validators.required, Validators.min(0.01)]],
+    ],
+    name: ['', [Validators.required, Validators.minLength(3), Validators.maxLength(120)]],
+    category: this.fb.nonNullable.control<InventoryCategory>('ELECTRONICS', Validators.required),
+    warehouseId: ['WH-SP-001', Validators.required],
+    quantity: [0, [Validators.required, integerValidator(0)]],
+    minThreshold: [0, [Validators.required, integerValidator(0)]],
+    unitPrice: [0, [Validators.required, Validators.min(0.01)]],
+  });
+
+  protected readonly skuInvalid = computed(
+    () =>
+      this.skuServerError() !== null ||
+      (this.form.controls.sku.touched && this.form.controls.sku.invalid)
+  );
+
+  constructor() {
+    effect(() => {
+      if (!this.open()) return;
+      const item = this.item();
+      this.serverError.set(null);
+      this.skuServerError.set(null);
+      this.form.reset({
+        sku: item?.sku ?? '',
+        name: item?.name ?? '',
+        category: item?.category ?? 'ELECTRONICS',
+        warehouseId: item?.warehouseId ?? 'WH-SP-001',
+        quantity: item?.quantity ?? 0,
+        minThreshold: item?.minThreshold ?? 0,
+        unitPrice: item?.unitPrice ?? 0,
+      });
     });
   }
 
-  protected onPriceInput(event: Event): void {
+  protected normalizeSku(event: Event): void {
     const input = event.target as HTMLInputElement;
-    const masked = applyBrlMask(input.value);
-    this.unitPriceDisplay.set(masked);
-    input.value = masked;
-
-    const parsed = parseBrl(masked);
-    this.form.get('unitPrice')?.setValue(isNaN(parsed) ? null : parsed, { emitEvent: true });
-    this.form.get('unitPrice')?.markAsTouched();
+    const normalized = input.value.toUpperCase().replace(/[^A-Z0-9-]/g, '');
+    if (input.value !== normalized) input.value = normalized;
+    this.form.controls.sku.setValue(normalized);
+    this.skuServerError.set(null);
   }
 
-  protected onBackdropClick(event: MouseEvent): void {
-    if (event.target === event.currentTarget) {
-      this.close.emit();
-    }
+  protected requestMovement(): void {
+    const item = this.item();
+    if (!item || this.form.dirty) return;
+    this.movementRequested.emit(item);
   }
 
-  protected onSubmit(): void {
-    if (this.form.invalid || this.form.pending) return;
+  protected async submit(): Promise<void> {
+    this.form.markAllAsTouched();
+    this.skuServerError.set(null);
+    this.serverError.set(null);
+    if (this.form.invalid) return;
 
-    const value = this.form.value as {
-      sku: string;
-      name: string;
-      category: InventoryCategory;
-      warehouseId: string;
-      quantity: number;
-      minThreshold: number;
-      unitPrice: number;
-    };
-
-    this.isSaving.set(true);
-
-    this.save.emit({
-      sku: value.sku,
-      name: value.name,
+    const value = this.form.getRawValue();
+    const base = {
+      sku: value.sku.trim(),
+      name: value.name.trim(),
       category: value.category,
       warehouseId: value.warehouseId,
-      quantity: Number(value.quantity),
       minThreshold: Number(value.minThreshold),
       unitPrice: Number(value.unitPrice),
-    });
-
-    this.isSaving.set(false);
-  }
-
-  /**
-   * Async validator that checks for duplicate SKUs in the mock API.
-   * Skips validation if the SKU hasn't changed (edit mode).
-   */
-  private asyncSkuValidator(
-    currentSku?: string
-  ): (control: AbstractControl) => Promise<ValidationErrors | null> {
-    return async (control: AbstractControl): Promise<ValidationErrors | null> => {
-      const sku = (control.value as string)?.trim().toUpperCase();
-
-      if (!sku || sku.length < 3) return null;
-
-      // In edit mode, skip validation if the SKU is unchanged
-      if (currentSku && sku === currentSku.toUpperCase()) return null;
-
-      try {
-        const { firstValueFrom } = await import('rxjs');
-        const response = await firstValueFrom(
-          this.http.get<PaginatedResponse<InventoryItem>>('/api/v1/inventory', {
-            params: { search: sku, limit: '5', page: '1', sortBy: 'sku', sortOrder: 'asc' },
-          })
-        );
-
-        const exact = response.data.some(
-          (item) => item.sku.toUpperCase() === sku
-        );
-        return exact ? { skuDuplicate: true } : null;
-      } catch {
-        return null; // Don't block on API error
-      }
     };
+
+    try {
+      const editing = this.item();
+      const saved = editing
+        ? await this.store.updateItem(editing.id, base satisfies UpdateInventoryItem)
+        : await this.store.addItem({
+            ...base,
+            quantity: Number(value.quantity),
+          } satisfies CreateInventoryItem);
+      this.saved.emit(saved);
+    } catch (error: unknown) {
+      const code = errorCode(error);
+      if (code === 'SKU_DUPLICADO') {
+        this.skuServerError.set('Já existe um produto com este SKU.');
+        this.form.controls.sku.setErrors({ duplicate: true });
+        return;
+      }
+      if (code === 'SKU_FORMATO') {
+        this.skuServerError.set('Formato de SKU inválido.');
+        this.form.controls.sku.setErrors({ format: true });
+        return;
+      }
+      this.serverError.set(messageFrom(error, 'Não foi possível salvar o produto.'));
+    }
   }
 }

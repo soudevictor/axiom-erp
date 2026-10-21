@@ -1,23 +1,72 @@
 import {
   HttpErrorResponse,
-  HttpParams,
   HttpResponse,
   type HttpInterceptorFn,
 } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { delay, Observable, of, switchMap, throwError } from 'rxjs';
 import { db } from '@/core/database/app-database';
-import type { InventoryItem } from '@/core/models/inventory.model';
-import type { TreasuryTransaction } from '@/core/models/treasury.model';
-import type { B2BPartner } from '@/features/partners/partners.component';
+import type {
+  CreateInventoryItem,
+  InventoryCategory,
+  InventoryItem,
+  InventorySummary,
+  UpdateInventoryItem,
+} from '@/core/models/inventory.model';
+import {
+  deriveInventoryStatus,
+  INVENTORY_CATEGORIES,
+  inventoryItemValue,
+} from '@/core/models/inventory.model';
+import type {
+  B2BPartner,
+  PartnerInput,
+  PartnerStatus,
+} from '@/core/models/partner.model';
+import {
+  BRAZILIAN_STATES,
+  PARTNER_CATEGORIES,
+  PARTNER_STATUS_TRANSITIONS,
+} from '@/core/models/partner.model';
 import type { PaginatedResponse } from '@/core/models/pagination.model';
+import type {
+  StockMovement,
+  StockMovementInput,
+  StockMovementResult,
+} from '@/core/models/stock-movement.model';
+import { STOCK_MOVEMENT_REASONS } from '@/core/models/stock-movement.model';
+import type {
+  TransactionInput,
+  TransactionStatus,
+  TreasurySummary,
+  TreasuryTransaction,
+} from '@/core/models/treasury.model';
+import { WAREHOUSES } from '@/core/models/warehouse.model';
+import { formatCnpj, isValidCnpj, normalizeCnpj } from '@/shared/utils/cnpj-validator';
 import { DevResilienceService } from './dev-resilience.service';
 
 const INVENTORY_PREFIX = '/api/v1/inventory';
 const TREASURY_PREFIX = '/api/v1/treasury';
-const TREASURY_SUMMARY_PREFIX = '/api/v1/treasury/summary';
 const PARTNERS_PREFIX = '/api/v1/partners';
 const SIMULATE_ERROR_HEADER = 'X-Simulate-Error';
+const DAY = 86_400_000;
+
+const STATUS_TEXT: Record<number, string> = {
+  400: 'Bad Request',
+  404: 'Not Found',
+  409: 'Conflict',
+  422: 'Unprocessable Entity',
+  500: 'Internal Server Error',
+};
+
+function apiError(status: number, url: string, code: string, message: string): HttpErrorResponse {
+  return new HttpErrorResponse({
+    status,
+    statusText: STATUS_TEXT[status] ?? 'Error',
+    url,
+    error: { code, message },
+  });
+}
 
 function getSimulatedLatency(slowLatency: boolean): number {
   const base = Math.floor(Math.random() * (500 - 200 + 1)) + 200;
@@ -32,371 +81,852 @@ function shouldSimulateError(
 }
 
 function createErrorResponse(url: string): HttpErrorResponse {
-  return new HttpErrorResponse({
-    status: 500,
-    statusText: 'Internal Server Error',
+  return apiError(
+    500,
     url,
-    error: { message: 'Erro simulado no servidor para testes de resiliência de UI.' },
+    'ERRO_SIMULADO',
+    'Erro simulado no servidor para testes de resiliência de UI.'
+  );
+}
+
+function handle<T>(
+  operation: () => Promise<T>,
+  status = 200
+): Observable<HttpResponse<T>> {
+  return new Observable<HttpResponse<T>>((subscriber) => {
+    operation()
+      .then((body) => {
+        subscriber.next(new HttpResponse({ status, body }));
+        subscriber.complete();
+      })
+      .catch((error: unknown) => subscriber.error(error));
   });
 }
 
+function intParam(value: string | null, fallback: number, min: number, max: number): number {
+  const parsed = Number.parseInt(value ?? '', 10);
+  const safe = Number.isFinite(parsed) ? parsed : fallback;
+  return Math.min(max, Math.max(min, safe));
+}
+
+function compareValues(a: unknown, b: unknown): number {
+  if (a instanceof Date && b instanceof Date) return a.getTime() - b.getTime();
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a ?? '').localeCompare(String(b ?? ''), 'pt-BR');
+}
+
+function paginate<T>(
+  items: readonly T[],
+  page: number,
+  limit: number
+): PaginatedResponse<T> {
+  const totalItems = items.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / limit));
+  const currentPage = Math.min(page, totalPages);
+  const start = (currentPage - 1) * limit;
+  return {
+    data: items.slice(start, start + limit),
+    totalItems,
+    currentPage,
+    pageSize: limit,
+    totalPages,
+    hasNextPage: currentPage < totalPages,
+    hasPreviousPage: currentPage > 1,
+    meta: {
+      totalItems,
+      currentPage,
+      pageSize: limit,
+      totalPages,
+      hasNextPage: currentPage < totalPages,
+      hasPreviousPage: currentPage > 1,
+    },
+  };
+}
+
+function sortByKey<T>(items: T[], key: keyof T, direction: 'asc' | 'desc'): T[] {
+  return [...items].sort((a, b) => {
+    const comparison = compareValues(a[key], b[key]);
+    return direction === 'desc' ? -comparison : comparison;
+  });
+}
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function monthKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function getMonthDate(now: Date, offset: number): Date {
+  return new Date(now.getFullYear(), now.getMonth() + offset, 1, 12, 0, 0, 0);
+}
+
 // ─────────────────────────────────────────────
-// INVENTORY HANDLERS
+// INVENTORY
 // ─────────────────────────────────────────────
 
-async function handleGetInventory(
-  params: HttpParams
-): Promise<PaginatedResponse<InventoryItem>> {
-  const search = params.get('search') ?? '';
-  const category = params.get('category') ?? '';
-  const status = params.get('status') ?? '';
-  const page = Math.max(1, parseInt(params.get('page') ?? '1', 10));
-  const limit = Math.min(500, Math.max(1, parseInt(params.get('limit') ?? '20', 10)));
-  const sortBy = (params.get('sortBy') ?? 'updatedAt') as keyof InventoryItem;
-  const sortOrder = (params.get('sortOrder') ?? 'desc') as 'asc' | 'desc';
+const INVENTORY_SORT_KEYS = new Set<keyof InventoryItem>([
+  'sku',
+  'name',
+  'category',
+  'warehouseId',
+  'quantity',
+  'minThreshold',
+  'unitPrice',
+  'status',
+  'updatedAt',
+]);
 
-  let allItems = await db.inventory.toArray();
+function normalizeSku(value: string): string {
+  return value.trim().toUpperCase();
+}
 
-  if (search) {
-    const lowerSearch = search.toLowerCase();
-    allItems = allItems.filter(
-      (item) =>
-        item.name.toLowerCase().includes(lowerSearch) ||
-        item.sku.toLowerCase().includes(lowerSearch)
+const SKU_PATTERN = /^[A-Z]{3}-[A-Z0-9]{4}-\d{4}$/;
+
+async function ensureUniqueSku(sku: string, exceptId?: string): Promise<void> {
+  const existing = await db.inventory
+    .filter((item) => item.sku.toUpperCase() === sku.toUpperCase() && item.id !== exceptId)
+    .first();
+  if (existing) {
+    throw apiError(409, '/api/v1/inventory', 'SKU_DUPLICADO', 'Já existe um produto com este SKU.');
+  }
+}
+
+async function validateSku(sku: string, exceptId?: string): Promise<void> {
+  if (!SKU_PATTERN.test(sku)) {
+    throw apiError(
+      422,
+      '/api/v1/inventory',
+      'SKU_FORMATO',
+      'Use o formato ABC-1234-0000 para o SKU.'
     );
   }
+  await ensureUniqueSku(sku, exceptId);
+}
 
-  if (category && category !== 'ALL') {
-    allItems = allItems.filter((item) => item.category === category);
+function validateInventoryFields(input: {
+  name: string;
+  category: InventoryCategory;
+  warehouseId: string;
+  minThreshold: number;
+  unitPrice: number;
+}): void {
+  if (input.name.trim().length < 3 || input.name.trim().length > 120) {
+    throw apiError(422, '/api/v1/inventory', 'VALIDACAO', 'O nome deve ter entre 3 e 120 caracteres.');
   }
-
-  if (status && status !== 'ALL') {
-    allItems = allItems.filter((item) => item.status === status);
+  if (!INVENTORY_CATEGORIES.includes(input.category)) {
+    throw apiError(422, '/api/v1/inventory', 'VALIDACAO', 'Categoria inválida.');
   }
+  if (!WAREHOUSES.some((warehouse) => warehouse.id === input.warehouseId)) {
+    throw apiError(422, '/api/v1/inventory', 'VALIDACAO', 'Armazém inválido.');
+  }
+  if (!Number.isInteger(input.minThreshold) || input.minThreshold < 0) {
+    throw apiError(422, '/api/v1/inventory', 'VALIDACAO', 'O mínimo deve ser um inteiro não negativo.');
+  }
+  if (!Number.isFinite(input.unitPrice) || input.unitPrice <= 0) {
+    throw apiError(422, '/api/v1/inventory', 'VALIDACAO', 'O preço unitário deve ser maior que zero.');
+  }
+}
 
-  allItems.sort((a, b) => {
-    const aVal = a[sortBy];
-    const bVal = b[sortBy];
+async function buildInventorySummary(): Promise<InventorySummary> {
+  const [items, movements] = await Promise.all([
+    db.inventory.toArray(),
+    db.stockMovements.toArray(),
+  ]);
 
-    let comparison = 0;
-    if (typeof aVal === 'string' && typeof bVal === 'string') {
-      comparison = aVal.localeCompare(bVal);
-    } else if (typeof aVal === 'number' && typeof bVal === 'number') {
-      comparison = aVal - bVal;
-    }
-
-    return sortOrder === 'desc' ? -comparison : comparison;
+  const byWarehouse = WAREHOUSES.map((warehouse) => {
+    const rows = items.filter((item) => item.warehouseId === warehouse.id);
+    return {
+      warehouseId: warehouse.id,
+      skus: rows.length,
+      units: rows.reduce((sum, item) => sum + item.quantity, 0),
+      value: roundMoney(rows.reduce((sum, item) => sum + inventoryItemValue(item), 0)),
+    };
   });
 
-  const totalItems = allItems.length;
-  const totalPages = Math.max(1, Math.ceil(totalItems / limit));
-  const startIndex = (page - 1) * limit;
-  const data = allItems.slice(startIndex, startIndex + limit);
+  const byCategory = INVENTORY_CATEGORIES.map((category) => {
+    const rows = items.filter((item) => item.category === category);
+    return {
+      category,
+      skus: rows.length,
+      units: rows.reduce((sum, item) => sum + item.quantity, 0),
+      value: roundMoney(rows.reduce((sum, item) => sum + inventoryItemValue(item), 0)),
+    };
+  });
 
-  const meta = {
-    totalItems,
-    currentPage: page,
-    pageSize: limit,
-    totalPages,
-    hasNextPage: page < totalPages,
-    hasPreviousPage: page > 1,
-  };
-
-  const totalStockValue = allItems.reduce(
-    (sum, item) => sum + item.quantity * item.unitPrice,
-    0
+  const cutoff = Date.now() - 30 * DAY;
+  const lastMovement = movements.reduce<string | null>(
+    (latest, movement) => (!latest || movement.createdAt > latest ? movement.createdAt : latest),
+    null
   );
-  const lowStockCount = allItems.filter(
-    (item) => item.status === 'LOW_STOCK' || item.quantity <= item.minThreshold
-  ).length;
-
-  const summary = { totalStockValue, lowStockCount };
 
   return {
-    data,
-    totalItems,
-    currentPage: page,
-    pageSize: limit,
-    totalPages,
-    hasNextPage: page < totalPages,
-    hasPreviousPage: page > 1,
-    meta,
-    summary,
+    totalSkus: items.length,
+    totalUnits: items.reduce((sum, item) => sum + item.quantity, 0),
+    totalStockValue: roundMoney(items.reduce((sum, item) => sum + inventoryItemValue(item), 0)),
+    inStockCount: items.filter((item) => item.status === 'IN_STOCK').length,
+    lowStockCount: items.filter((item) => item.quantity <= item.minThreshold).length,
+    outOfStockCount: items.filter((item) => item.status === 'OUT_OF_STOCK').length,
+    movementsLast30Days: movements.filter(
+      (movement) => new Date(movement.createdAt).getTime() >= cutoff
+    ).length,
+    lastMovementAt: lastMovement,
+    byWarehouse,
+    byCategory,
+    criticalItems: items
+      .filter((item) => item.quantity <= item.minThreshold)
+      .sort((a, b) => {
+        if (a.quantity === 0 && b.quantity !== 0) return -1;
+        if (b.quantity === 0 && a.quantity !== 0) return 1;
+        return a.quantity - a.minThreshold - (b.quantity - b.minThreshold);
+      })
+      .slice(0, 5)
+      .map((item) => ({
+        id: item.id,
+        sku: item.sku,
+        name: item.name,
+        quantity: item.quantity,
+        minThreshold: item.minThreshold,
+        warehouseId: item.warehouseId,
+      })),
   };
 }
 
-async function handlePostInventory(
-  body: Omit<InventoryItem, 'id'>
-): Promise<InventoryItem> {
-  const newItem: InventoryItem = {
-    ...body,
+async function handleGetInventory(params: {
+  get(name: string): string | null;
+}): Promise<PaginatedResponse<InventoryItem>> {
+  const search = (params.get('search') ?? '').trim().toLowerCase();
+  const category = params.get('category');
+  const status = params.get('status');
+  const warehouseId = params.get('warehouseId');
+  const page = intParam(params.get('page'), 1, 1, 100_000);
+  const limit = intParam(params.get('limit'), 20, 1, 1000);
+  const sortCandidate = (params.get('sortBy') ?? 'updatedAt') as keyof InventoryItem;
+  const sortBy = INVENTORY_SORT_KEYS.has(sortCandidate) ? sortCandidate : 'updatedAt';
+  const sortOrder = params.get('sortOrder') === 'asc' ? 'asc' : 'desc';
+
+  let items = await db.inventory.toArray();
+  if (search) {
+    const digits = normalizeCnpj(search);
+    items = items.filter(
+      (item) =>
+        item.name.toLowerCase().includes(search) ||
+        item.sku.toLowerCase().includes(search) ||
+        (digits.length > 0 && normalizeCnpj(item.sku).includes(digits))
+    );
+  }
+  if (category && category !== 'ALL') {
+    items = items.filter((item) => item.category === category);
+  }
+  if (status && status !== 'ALL') {
+    items = items.filter((item) => item.status === status);
+  }
+  if (warehouseId && warehouseId !== 'ALL') {
+    items = items.filter((item) => item.warehouseId === warehouseId);
+  }
+
+  const sorted = sortByKey(items, sortBy, sortOrder);
+  const response = paginate(sorted, page, limit);
+  const summary = await buildInventorySummary();
+  return {
+    ...response,
+    summary: {
+      totalStockValue: summary.totalStockValue,
+      lowStockCount: summary.lowStockCount,
+    },
+  };
+}
+
+async function handlePostInventory(body: CreateInventoryItem): Promise<InventoryItem> {
+  const sku = normalizeSku(body.sku ?? '');
+  await validateSku(sku);
+  validateInventoryFields(body);
+
+  if (!Number.isInteger(body.quantity) || body.quantity < 0) {
+    throw apiError(422, '/api/v1/inventory', 'VALIDACAO', 'A quantidade deve ser um inteiro não negativo.');
+  }
+
+  const item: InventoryItem = {
     id: crypto.randomUUID(),
+    sku,
+    name: body.name.trim(),
+    category: body.category,
+    warehouseId: body.warehouseId,
+    quantity: body.quantity,
+    minThreshold: body.minThreshold,
+    unitPrice: roundMoney(body.unitPrice),
+    status: deriveInventoryStatus(body.quantity, body.minThreshold),
     updatedAt: new Date(),
   };
-  await db.inventory.add(newItem);
-  return newItem;
+
+  await db.transaction('rw', db.inventory, db.stockMovements, async () => {
+    await db.inventory.add(item);
+    if (item.quantity > 0) {
+      const movement: StockMovement = {
+        id: crypto.randomUUID(),
+        itemId: item.id,
+        sku: item.sku,
+        itemName: item.name,
+        warehouseId: item.warehouseId,
+        type: 'IN',
+        quantity: item.quantity,
+        delta: item.quantity,
+        previousQuantity: 0,
+        newQuantity: item.quantity,
+        reason: 'AJUSTE',
+        note: 'Saldo inicial',
+        createdAt: new Date().toISOString(),
+      };
+      await db.stockMovements.add(movement);
+    }
+  });
+
+  return item;
 }
 
 async function handlePutInventory(
   id: string,
-  body: Partial<InventoryItem>
+  body: UpdateInventoryItem & { quantity?: number }
 ): Promise<InventoryItem> {
-  const updates = { ...body, updatedAt: new Date() };
-  await db.inventory.update(id, updates);
-
-  const updated = await db.inventory.get(id);
-  if (!updated) {
-    throw new HttpErrorResponse({
-      status: 404,
-      statusText: 'Not Found',
-      error: { message: `Item com ID "${id}" não encontrado.` },
-    });
+  const existing = await db.inventory.get(id);
+  if (!existing) {
+    throw apiError(404, `/api/v1/inventory/${id}`, 'NAO_ENCONTRADO', 'Produto não encontrado.');
   }
+
+  const sku = normalizeSku(body.sku ?? existing.sku);
+  await validateSku(sku, id);
+  validateInventoryFields({
+    name: body.name ?? existing.name,
+    category: body.category ?? existing.category,
+    warehouseId: body.warehouseId ?? existing.warehouseId,
+    minThreshold: body.minThreshold ?? existing.minThreshold,
+    unitPrice: body.unitPrice ?? existing.unitPrice,
+  });
+
+  const updated: InventoryItem = {
+    ...existing,
+    sku,
+    name: (body.name ?? existing.name).trim(),
+    category: body.category ?? existing.category,
+    warehouseId: body.warehouseId ?? existing.warehouseId,
+    minThreshold: body.minThreshold ?? existing.minThreshold,
+    unitPrice: roundMoney(body.unitPrice ?? existing.unitPrice),
+    status: deriveInventoryStatus(existing.quantity, body.minThreshold ?? existing.minThreshold),
+    updatedAt: new Date(),
+  };
+  await db.inventory.put(updated);
   return updated;
 }
 
 async function handleDeleteInventory(id: string): Promise<void> {
+  const existing = await db.inventory.get(id);
+  if (!existing) {
+    throw apiError(404, `/api/v1/inventory/${id}`, 'NAO_ENCONTRADO', 'Produto não encontrado.');
+  }
   await db.inventory.delete(id);
 }
 
-// ─────────────────────────────────────────────
-// TREASURY HANDLERS
-// ─────────────────────────────────────────────
-
-async function handleGetTreasury(
-  params: HttpParams
-): Promise<PaginatedResponse<TreasuryTransaction>> {
-  const search = params.get('search') ?? '';
-  const type = params.get('type') ?? '';
-  const status = params.get('status') ?? '';
-  const category = params.get('category') ?? '';
-  const page = Math.max(1, parseInt(params.get('page') ?? '1', 10));
-  const limit = Math.min(500, Math.max(1, parseInt(params.get('limit') ?? '20', 10)));
-  const sortBy = (params.get('sortBy') ?? 'dueDate') as keyof TreasuryTransaction;
-  const sortOrder = (params.get('sortOrder') ?? 'asc') as 'asc' | 'desc';
-
-  let allTransactions = await db.transactions.toArray();
-
-  if (search) {
-    const lower = search.toLowerCase();
-    allTransactions = allTransactions.filter(
-      (t) =>
-        t.description.toLowerCase().includes(lower) ||
-        t.partnerName.toLowerCase().includes(lower)
+async function handleRestoreInventory(body: InventoryItem): Promise<InventoryItem> {
+  const existingBySku = await db.inventory
+    .filter((item) => item.sku.toUpperCase() === body.sku.toUpperCase() && item.id !== body.id)
+    .first();
+  if (existingBySku) {
+    throw apiError(
+      409,
+      '/api/v1/inventory/restore',
+      'SKU_DUPLICADO',
+      'O SKU já está em uso por outro produto.'
     );
   }
 
-  if (type && type !== 'ALL') {
-    allTransactions = allTransactions.filter((t) => t.type === type);
-  }
-
-  if (status && status !== 'ALL') {
-    allTransactions = allTransactions.filter((t) => t.status === status);
-  }
-
-  if (category && category !== 'ALL') {
-    allTransactions = allTransactions.filter((t) => t.category === category);
-  }
-
-  allTransactions.sort((a, b) => {
-    const aVal = a[sortBy];
-    const bVal = b[sortBy];
-
-    let comparison = 0;
-    if (typeof aVal === 'string' && typeof bVal === 'string') {
-      comparison = aVal.localeCompare(bVal);
-    } else if (typeof aVal === 'number' && typeof bVal === 'number') {
-      comparison = aVal - bVal;
-    }
-
-    return sortOrder === 'desc' ? -comparison : comparison;
-  });
-
-  const totalItems = allTransactions.length;
-  const totalPages = Math.max(1, Math.ceil(totalItems / limit));
-  const startIndex = (page - 1) * limit;
-  const data = allTransactions.slice(startIndex, startIndex + limit);
-
-  const meta = {
-    totalItems,
-    currentPage: page,
-    pageSize: limit,
-    totalPages,
-    hasNextPage: page < totalPages,
-    hasPreviousPage: page > 1,
+  const restored: InventoryItem = {
+    ...body,
+    quantity: Math.max(0, Math.trunc(body.quantity)),
+    minThreshold: Math.max(0, Math.trunc(body.minThreshold)),
+    unitPrice: roundMoney(body.unitPrice),
+    status: deriveInventoryStatus(body.quantity, body.minThreshold),
+    updatedAt: new Date(),
   };
-
-  const totalReceivables = allTransactions
-    .filter((t) => t.type === 'INCOME' && t.status !== 'CANCELLED')
-    .reduce((sum, t) => sum + t.amount, 0);
-  const totalPayables = allTransactions
-    .filter((t) => t.type === 'EXPENSE' && t.status !== 'CANCELLED')
-    .reduce((sum, t) => sum + t.amount, 0);
-  const incomeCompleted = allTransactions
-    .filter((t) => t.type === 'INCOME' && t.status === 'COMPLETED')
-    .reduce((sum, t) => sum + t.amount, 0);
-  const expenseCompleted = allTransactions
-    .filter((t) => t.type === 'EXPENSE' && t.status === 'COMPLETED')
-    .reduce((sum, t) => sum + t.amount, 0);
-  const totalBalance = incomeCompleted - expenseCompleted;
-
-  const summary = { totalReceivables, totalPayables, totalBalance };
-
-  return {
-    data,
-    totalItems,
-    currentPage: page,
-    pageSize: limit,
-    totalPages,
-    hasNextPage: page < totalPages,
-    hasPreviousPage: page > 1,
-    meta,
-    summary,
-  };
+  await db.inventory.put(restored);
+  return restored;
 }
 
-/**
- * Returns global summary KPIs from ALL treasury transactions (unpaginated).
- * This is called independently of the paginated GET so that KPIs are accurate
- * even when only the first page of transactions has been loaded.
- */
-async function handleGetTreasurySummary(): Promise<{
-  totalReceivables: number;
-  totalPayables: number;
-  totalBalance: number;
-  totalItems: number;
-  aging: {
-    overdue: TreasuryTransaction[];
-    today: TreasuryTransaction[];
-    next7: TreasuryTransaction[];
-    next30: TreasuryTransaction[];
+async function handleGetMovements(id: string, limit: number): Promise<StockMovement[]> {
+  const item = await db.inventory.get(id);
+  if (!item) {
+    throw apiError(404, `/api/v1/inventory/${id}`, 'NAO_ENCONTRADO', 'Produto não encontrado.');
+  }
+  const movements = await db.stockMovements.where('itemId').equals(id).toArray();
+  return movements
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, Math.min(100, Math.max(1, limit)));
+}
+
+async function handlePostMovement(
+  id: string,
+  input: StockMovementInput
+): Promise<StockMovementResult> {
+  const item = await db.inventory.get(id);
+  if (!item) {
+    throw apiError(404, `/api/v1/inventory/${id}`, 'NAO_ENCONTRADO', 'Produto não encontrado.');
+  }
+
+  const allowedReasons = STOCK_MOVEMENT_REASONS[input.type];
+  if (!allowedReasons?.includes(input.reason)) {
+    throw apiError(422, `/api/v1/inventory/${id}/movements`, 'MOTIVO_INVALIDO', 'Motivo inválido para o tipo escolhido.');
+  }
+  if (input.note && input.note.length > 200) {
+    throw apiError(422, `/api/v1/inventory/${id}/movements`, 'VALIDACAO', 'A observação deve ter até 200 caracteres.');
+  }
+
+  const quantity = Math.trunc(input.quantity);
+  if (!Number.isInteger(input.quantity)) {
+    throw apiError(422, `/api/v1/inventory/${id}/movements`, 'VALIDACAO', 'Informe uma quantidade inteira.');
+  }
+
+  let newQuantity = item.quantity;
+  if (input.type === 'IN') {
+    if (quantity <= 0) {
+      throw apiError(422, `/api/v1/inventory/${id}/movements`, 'VALIDACAO', 'A entrada deve ser maior que zero.');
+    }
+    newQuantity = item.quantity + quantity;
+  } else if (input.type === 'OUT') {
+    if (quantity <= 0) {
+      throw apiError(422, `/api/v1/inventory/${id}/movements`, 'VALIDACAO', 'A saída deve ser maior que zero.');
+    }
+    newQuantity = item.quantity - quantity;
+    if (newQuantity < 0) {
+      throw apiError(
+        422,
+        `/api/v1/inventory/${id}/movements`,
+        'ESTOQUE_INSUFICIENTE',
+        `Saldo insuficiente. Disponível: ${item.quantity}.`
+      );
+    }
+  } else {
+    if (quantity < 0) {
+      throw apiError(422, `/api/v1/inventory/${id}/movements`, 'VALIDACAO', 'O saldo contado não pode ser negativo.');
+    }
+    newQuantity = quantity;
+    if (newQuantity === item.quantity) {
+      throw apiError(
+        422,
+        `/api/v1/inventory/${id}/movements`,
+        'SEM_ALTERACAO',
+        'O saldo informado é igual ao atual.'
+      );
+    }
+  }
+
+  const updatedItem: InventoryItem = {
+    ...item,
+    quantity: newQuantity,
+    status: deriveInventoryStatus(newQuantity, item.minThreshold),
+    updatedAt: new Date(),
   };
-}> {
-  const allTransactions = await db.transactions.toArray();
+  const movement: StockMovement = {
+    id: crypto.randomUUID(),
+    itemId: item.id,
+    sku: item.sku,
+    itemName: item.name,
+    warehouseId: item.warehouseId,
+    type: input.type,
+    quantity: input.type === 'ADJUSTMENT' ? quantity : quantity,
+    delta: newQuantity - item.quantity,
+    previousQuantity: item.quantity,
+    newQuantity,
+    reason: input.reason,
+    note: input.note?.trim() || undefined,
+    createdAt: new Date().toISOString(),
+  };
 
-  const totalReceivables = allTransactions
-    .filter((t) => t.type === 'INCOME' && t.status !== 'CANCELLED')
-    .reduce((sum, t) => sum + t.amount, 0);
-  const totalPayables = allTransactions
-    .filter((t) => t.type === 'EXPENSE' && t.status !== 'CANCELLED')
-    .reduce((sum, t) => sum + t.amount, 0);
-  const incomeCompleted = allTransactions
-    .filter((t) => t.type === 'INCOME' && t.status === 'COMPLETED')
-    .reduce((sum, t) => sum + t.amount, 0);
-  const expenseCompleted = allTransactions
-    .filter((t) => t.type === 'EXPENSE' && t.status === 'COMPLETED')
-    .reduce((sum, t) => sum + t.amount, 0);
-  const totalBalance = incomeCompleted - expenseCompleted;
+  await db.transaction('rw', db.inventory, db.stockMovements, async () => {
+    await db.inventory.put(updatedItem);
+    await db.stockMovements.add(movement);
+  });
 
+  return { movement, item: updatedItem };
+}
+
+// ─────────────────────────────────────────────
+// TREASURY
+// ─────────────────────────────────────────────
+
+async function buildTreasurySummary(): Promise<TreasurySummary> {
+  const all = await db.transactions.toArray();
   const now = new Date();
-  now.setHours(0, 0, 0, 0);
+  const completed = all.filter((transaction) => transaction.status === 'COMPLETED');
+  const realizedIncome = roundMoney(
+    completed.filter((t) => t.type === 'INCOME').reduce((sum, t) => sum + t.amount, 0)
+  );
+  const realizedExpense = roundMoney(
+    completed.filter((t) => t.type === 'EXPENSE').reduce((sum, t) => sum + t.amount, 0)
+  );
 
-  const pending = allTransactions.filter((t) => t.status === 'PENDING');
+  const monthly = Array.from({ length: 6 }, (_, index) => {
+    const date = getMonthDate(now, index - 5);
+    const key = monthKey(date);
+    const rows = completed.filter((transaction) => {
+      const effective = new Date(transaction.paymentDate ?? transaction.dueDate);
+      return monthKey(effective) === key;
+    });
+    const income = roundMoney(
+      rows.filter((t) => t.type === 'INCOME').reduce((sum, t) => sum + t.amount, 0)
+    );
+    const expense = roundMoney(
+      rows.filter((t) => t.type === 'EXPENSE').reduce((sum, t) => sum + t.amount, 0)
+    );
+    return { month: key, income, expense, balance: roundMoney(income - expense) };
+  });
+
+  const totalReceivables = roundMoney(
+    all.filter((t) => t.type === 'INCOME' && t.status !== 'CANCELLED').reduce((sum, t) => sum + t.amount, 0)
+  );
+  const totalPayables = roundMoney(
+    all.filter((t) => t.type === 'EXPENSE' && t.status !== 'CANCELLED').reduce((sum, t) => sum + t.amount, 0)
+  );
+
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const pending = all.filter((transaction) => transaction.status === 'PENDING');
   const overdue: TreasuryTransaction[] = [];
-  const today: TreasuryTransaction[] = [];
+  const dueToday: TreasuryTransaction[] = [];
   const next7: TreasuryTransaction[] = [];
   const next30: TreasuryTransaction[] = [];
+  const upcoming30 = {
+    receivables: 0,
+    payables: 0,
+    receivableCount: 0,
+    payableCount: 0,
+  };
 
-  for (const tx of pending) {
-    const due = new Date(tx.dueDate);
-    due.setHours(0, 0, 0, 0);
-    const diffDays = Math.round((due.getTime() - now.getTime()) / 86_400_000);
+  for (const transaction of pending) {
+    const due = new Date(transaction.dueDate);
+    const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate()).getTime();
+    const diff = Math.round((dueDay - today) / DAY);
 
-    if (diffDays < 0) {
-      overdue.push(tx);
-    } else if (diffDays === 0) {
-      today.push(tx);
-    } else if (diffDays <= 7) {
-      next7.push(tx);
-    } else if (diffDays <= 30) {
-      next30.push(tx);
+    if (diff < 0) overdue.push(transaction);
+    else if (diff === 0) dueToday.push(transaction);
+    else if (diff <= 7) next7.push(transaction);
+    else if (diff <= 30) next30.push(transaction);
+
+    if (diff <= 30) {
+      if (transaction.type === 'INCOME') {
+        upcoming30.receivables += transaction.amount;
+        upcoming30.receivableCount += 1;
+      } else {
+        upcoming30.payables += transaction.amount;
+        upcoming30.payableCount += 1;
+      }
     }
   }
 
   return {
     totalReceivables,
     totalPayables,
-    totalBalance,
-    totalItems: allTransactions.length,
-    aging: { overdue, today, next7, next30 },
+    totalBalance: roundMoney(realizedIncome - realizedExpense),
+    totalItems: all.length,
+    aging: { overdue, today: dueToday, next7, next30 },
+    realized: {
+      income: realizedIncome,
+      expense: realizedExpense,
+      balance: roundMoney(realizedIncome - realizedExpense),
+    },
+    monthly,
+    upcoming30: {
+      receivables: roundMoney(upcoming30.receivables),
+      payables: roundMoney(upcoming30.payables),
+      receivableCount: upcoming30.receivableCount,
+      payableCount: upcoming30.payableCount,
+    },
+    lastMonth: monthly.length >= 2 ? monthly[monthly.length - 2] : null,
   };
 }
 
-async function handlePostTreasury(
-  body: Omit<TreasuryTransaction, 'id'>
-): Promise<TreasuryTransaction> {
-  const newTx: TreasuryTransaction = {
+async function handleGetTreasury(params: {
+  get(name: string): string | null;
+}): Promise<PaginatedResponse<TreasuryTransaction>> {
+  const search = (params.get('search') ?? '').trim().toLowerCase();
+  const type = params.get('type');
+  const status = params.get('status');
+  const category = params.get('category');
+  const page = intParam(params.get('page'), 1, 1, 100_000);
+  const limit = intParam(params.get('limit'), 20, 1, 1000);
+  const sortBy = (params.get('sortBy') ?? 'dueDate') as keyof TreasuryTransaction;
+  const sortOrder = params.get('sortOrder') === 'desc' ? 'desc' : 'asc';
+
+  let items = await db.transactions.toArray();
+  if (search) {
+    items = items.filter(
+      (transaction) =>
+        transaction.description.toLowerCase().includes(search) ||
+        transaction.partnerName.toLowerCase().includes(search)
+    );
+  }
+  if (type && type !== 'ALL') items = items.filter((transaction) => transaction.type === type);
+  if (status && status !== 'ALL') {
+    items = items.filter((transaction) => transaction.status === status);
+  }
+  if (category && category !== 'ALL') {
+    items = items.filter((transaction) => transaction.category === category);
+  }
+
+  const sorted = sortByKey(items, sortBy, sortOrder);
+  const response = paginate(sorted, page, limit);
+  return {
+    ...response,
+    summary: {
+      totalStockValue: 0,
+      lowStockCount: 0,
+    },
+  };
+}
+
+async function handlePostTreasury(body: TransactionInput): Promise<TreasuryTransaction> {
+  if (!body.description?.trim() || !Number.isFinite(body.amount) || body.amount <= 0) {
+    throw apiError(422, '/api/v1/treasury', 'VALIDACAO', 'Informe descrição e valor válidos.');
+  }
+  const transaction: TreasuryTransaction = {
     ...body,
     id: crypto.randomUUID(),
+    description: body.description.trim(),
+    amount: roundMoney(body.amount),
+    status: 'PENDING',
+    dueDate: body.dueDate,
   };
-  await db.transactions.add(newTx);
-  return newTx;
+  await db.transactions.add(transaction);
+  return transaction;
 }
 
-async function handlePutTreasury(
+async function handleUpdateTreasuryStatus(
   id: string,
-  body: Partial<TreasuryTransaction>
+  status: TransactionStatus
 ): Promise<TreasuryTransaction> {
-  await db.transactions.update(id, body);
-  const updated = await db.transactions.get(id);
-  if (!updated) {
-    throw new HttpErrorResponse({
-      status: 404,
-      statusText: 'Not Found',
-      error: { message: `Transação com ID "${id}" não encontrada.` },
-    });
+  const existing = await db.transactions.get(id);
+  if (!existing) {
+    throw apiError(404, `/api/v1/treasury/${id}`, 'NAO_ENCONTRADO', 'Transação não encontrada.');
   }
+  if (!['PENDING', 'COMPLETED', 'CANCELLED'].includes(status)) {
+    throw apiError(422, `/api/v1/treasury/${id}/status`, 'VALIDACAO', 'Status inválido.');
+  }
+  const updated: TreasuryTransaction = {
+    ...existing,
+    status,
+    paymentDate:
+      status === 'COMPLETED'
+        ? existing.paymentDate ?? new Date().toISOString()
+        : status === 'PENDING'
+          ? undefined
+          : existing.paymentDate,
+  };
+  await db.transactions.put(updated);
   return updated;
 }
 
-async function handleDeleteTreasury(id: string): Promise<void> {
-  await db.transactions.delete(id);
+// ─────────────────────────────────────────────
+// PARTNERS
+// ─────────────────────────────────────────────
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function validatePartnerInput(input: PartnerInput): void {
+  if (!isValidCnpj(input.cnpj)) {
+    throw apiError(422, '/api/v1/partners', 'CNPJ_INVALIDO', 'Informe um CNPJ válido.');
+  }
+  if (!input.companyName || input.companyName.trim().length < 3 || input.companyName.trim().length > 120) {
+    throw apiError(422, '/api/v1/partners', 'VALIDACAO', 'A razão social deve ter entre 3 e 120 caracteres.');
+  }
+  if (input.tradeName && input.tradeName.length > 120) {
+    throw apiError(422, '/api/v1/partners', 'VALIDACAO', 'O nome fantasia deve ter até 120 caracteres.');
+  }
+  if (!PARTNER_CATEGORIES.includes(input.category)) {
+    throw apiError(422, '/api/v1/partners', 'VALIDACAO', 'Categoria inválida.');
+  }
+  if (!BRAZILIAN_STATES.includes(input.state as (typeof BRAZILIAN_STATES)[number])) {
+    throw apiError(422, '/api/v1/partners', 'VALIDACAO', 'UF inválida.');
+  }
+  if (!Number.isFinite(input.creditLimit) || input.creditLimit < 0) {
+    throw apiError(422, '/api/v1/partners', 'VALIDACAO', 'O limite de crédito deve ser maior ou igual a zero.');
+  }
+  if (input.email && !EMAIL_PATTERN.test(input.email)) {
+    throw apiError(422, '/api/v1/partners', 'VALIDACAO', 'Informe um e-mail válido.');
+  }
+  const phoneDigits = (input.phone ?? '').replace(/\D/g, '');
+  if (input.phone && (phoneDigits.length < 10 || phoneDigits.length > 11)) {
+    throw apiError(422, '/api/v1/partners', 'VALIDACAO', 'Informe um telefone com 10 ou 11 dígitos.');
+  }
+  if (input.contactName && input.contactName.length > 80) {
+    throw apiError(422, '/api/v1/partners', 'VALIDACAO', 'O contato deve ter até 80 caracteres.');
+  }
 }
 
-// ─────────────────────────────────────────────
-// PARTNERS HANDLERS
-// ─────────────────────────────────────────────
-
-async function handleGetPartners(
-  params: HttpParams
-): Promise<readonly B2BPartner[]> {
-  const search = (params.get('search') ?? '').toLowerCase();
-  let all = await db.partners.toArray();
-  if (search) {
-    all = all.filter(
-      (p) =>
-        p.companyName.toLowerCase().includes(search) ||
-        p.cnpj.toLowerCase().includes(search)
+async function ensureUniquePartnerCnpj(cnpj: string, exceptId?: string): Promise<void> {
+  const digits = normalizeCnpj(cnpj);
+  const existing = await db.partners
+    .filter((partner) => normalizeCnpj(partner.cnpj) === digits && partner.id !== exceptId)
+    .first();
+  if (existing) {
+    throw apiError(
+      409,
+      '/api/v1/partners',
+      'CNPJ_DUPLICADO',
+      'Já existe um parceiro com este CNPJ.'
     );
   }
-  // Newest first (highest ID last insert → sort by companyName as fallback)
-  return all.reverse();
 }
 
-async function handlePostPartner(body: Omit<B2BPartner, 'id'>): Promise<B2BPartner> {
-  const count = await db.partners.count();
-  const newPartner: B2BPartner = {
-    ...body,
-    id: `PART-${String(count + 1).padStart(3, '0')}-${Date.now()}`,
-    status: body.status ?? 'EM_ANALISE',
-    creditUsed: body.creditUsed ?? 0,
+async function handleGetPartners(params: {
+  get(name: string): string | null;
+}): Promise<B2BPartner[]> {
+  const search = (params.get('search') ?? '').trim().toLowerCase();
+  const digits = normalizeCnpj(search);
+  let items = await db.partners.toArray();
+  if (search) {
+    items = items.filter(
+      (partner) =>
+        partner.companyName.toLowerCase().includes(search) ||
+        (partner.tradeName ?? '').toLowerCase().includes(search) ||
+        (partner.email ?? '').toLowerCase().includes(search) ||
+        (digits.length > 0 && normalizeCnpj(partner.cnpj).includes(digits))
+    );
+  }
+  return items.sort((a, b) => a.companyName.localeCompare(b.companyName, 'pt-BR'));
+}
+
+async function handlePostPartner(body: PartnerInput): Promise<B2BPartner> {
+  validatePartnerInput(body);
+  await ensureUniquePartnerCnpj(body.cnpj);
+
+  const existing = await db.partners.toArray();
+  const maxSequence = existing.reduce((max, partner) => {
+    const match = /^PART-(\d{3})/.exec(partner.id);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+  const now = new Date().toISOString();
+  const partner: B2BPartner = {
+    id: `PART-${String(maxSequence + 1).padStart(3, '0')}`,
+    cnpj: formatCnpj(body.cnpj),
+    companyName: body.companyName.trim(),
+    tradeName: body.tradeName?.trim() || undefined,
+    category: body.category,
+    status: 'EM_ANALISE',
+    creditLimit: roundMoney(body.creditLimit),
+    creditUsed: 0,
+    state: body.state,
+    contactName: body.contactName?.trim() || undefined,
+    email: body.email?.trim() || undefined,
+    phone: body.phone?.trim() || undefined,
+    statusUpdatedAt: now,
+    createdAt: now,
+    updatedAt: now,
   };
-  await db.partners.add(newPartner);
-  return newPartner;
+  await db.partners.add(partner);
+  return partner;
 }
 
-function extractIdFromUrl(url: string, prefix: string): string {
-  const cleanUrl = url.split('?')[0];
-  return cleanUrl.replace(`${prefix}/`, '').replace(prefix, '');
+async function handlePutPartner(id: string, body: PartnerInput): Promise<B2BPartner> {
+  const existing = await db.partners.get(id);
+  if (!existing) {
+    throw apiError(404, `/api/v1/partners/${id}`, 'NAO_ENCONTRADO', 'Parceiro não encontrado.');
+  }
+  validatePartnerInput(body);
+  await ensureUniquePartnerCnpj(body.cnpj, id);
+
+  const updated: B2BPartner = {
+    ...existing,
+    cnpj: formatCnpj(body.cnpj),
+    companyName: body.companyName.trim(),
+    tradeName: body.tradeName?.trim() || undefined,
+    category: body.category,
+    creditLimit: roundMoney(body.creditLimit),
+    state: body.state,
+    contactName: body.contactName?.trim() || undefined,
+    email: body.email?.trim() || undefined,
+    phone: body.phone?.trim() || undefined,
+    updatedAt: new Date().toISOString(),
+  };
+  await db.partners.put(updated);
+  return updated;
+}
+
+async function handleChangePartnerStatus(
+  id: string,
+  status: PartnerStatus,
+  reason?: string
+): Promise<B2BPartner> {
+  const existing = await db.partners.get(id);
+  if (!existing) {
+    throw apiError(404, `/api/v1/partners/${id}`, 'NAO_ENCONTRADO', 'Parceiro não encontrado.');
+  }
+  if (!PARTNER_STATUS_TRANSITIONS[existing.status].includes(status)) {
+    throw apiError(
+      422,
+      `/api/v1/partners/${id}/status`,
+      'TRANSICAO_INVALIDA',
+      'Transição de status não permitida.'
+    );
+  }
+  if (status === 'BLOQUEADO' && !reason?.trim()) {
+    throw apiError(
+      422,
+      `/api/v1/partners/${id}/status`,
+      'VALIDACAO',
+      'Informe o motivo do bloqueio.'
+    );
+  }
+
+  const now = new Date().toISOString();
+  const updated: B2BPartner = {
+    ...existing,
+    status,
+    statusReason: reason?.trim() || undefined,
+    statusUpdatedAt: now,
+    updatedAt: now,
+  };
+  await db.partners.put(updated);
+  return updated;
+}
+
+async function handleDeletePartner(id: string): Promise<void> {
+  const existing = await db.partners.get(id);
+  if (!existing) {
+    throw apiError(404, `/api/v1/partners/${id}`, 'NAO_ENCONTRADO', 'Parceiro não encontrado.');
+  }
+  const transaction = await db.transactions.where('partnerId').equals(id).first();
+  if (transaction) {
+    throw apiError(
+      409,
+      `/api/v1/partners/${id}`,
+      'PARCEIRO_COM_TRANSACOES',
+      'Este parceiro possui transações vinculadas e não pode ser excluído.'
+    );
+  }
+  if (existing.creditUsed > 0) {
+    throw apiError(
+      409,
+      `/api/v1/partners/${id}`,
+      'PARCEIRO_COM_CREDITO',
+      'Este parceiro possui crédito utilizado e não pode ser excluído.'
+    );
+  }
+  await db.partners.delete(id);
+}
+
+// ─────────────────────────────────────────────
+// ROUTING
+// ─────────────────────────────────────────────
+
+function remainder(url: string, prefix: string): string {
+  return url.split('?')[0].slice(prefix.length).replace(/^\/+/, '');
 }
 
 export const mockApiInterceptor: HttpInterceptorFn = (req, next) => {
-  const isInventory = req.url.startsWith(INVENTORY_PREFIX);
-  const isTreasurySummary = req.url.startsWith(TREASURY_SUMMARY_PREFIX);
-  const isTreasury = !isTreasurySummary && req.url.startsWith(TREASURY_PREFIX);
-  const isPartners = req.url.startsWith(PARTNERS_PREFIX);
+  const cleanUrl = req.url.split('?')[0];
+  const isInventory = cleanUrl.startsWith(INVENTORY_PREFIX);
+  const isTreasury = cleanUrl.startsWith(TREASURY_PREFIX);
+  const isPartners = cleanUrl.startsWith(PARTNERS_PREFIX);
 
-  if (!isInventory && !isTreasury && !isTreasurySummary && !isPartners) {
+  if (!isInventory && !isTreasury && !isPartners) {
     return next(req);
   }
 
@@ -410,142 +940,93 @@ export const mockApiInterceptor: HttpInterceptorFn = (req, next) => {
     );
   }
 
-  const prefix = isInventory ? INVENTORY_PREFIX : isTreasury ? TREASURY_PREFIX : PARTNERS_PREFIX;
-  const cleanPath = req.url.split('?')[0];
-  const itemId = cleanPath !== prefix ? extractIdFromUrl(req.url, prefix) : '';
-
   let response$: Observable<HttpResponse<unknown>>;
 
-  // Treasury summary endpoint (must come before generic treasury)
-  if (isTreasurySummary && req.method === 'GET') {
-    response$ = new Observable((subscriber) => {
-      handleGetTreasurySummary()
-        .then((res) => {
-          subscriber.next(new HttpResponse({ status: 200, body: res }));
-          subscriber.complete();
-        })
-        .catch((err) => subscriber.error(err));
-    });
-    return response$.pipe(delay(simulatedDelay));
-  }
-
   if (isInventory) {
-    switch (req.method) {
-      case 'GET':
-        response$ = new Observable((subscriber) => {
-          handleGetInventory(req.params)
-            .then((res) => {
-              subscriber.next(new HttpResponse({ status: 200, body: res }));
-              subscriber.complete();
-            })
-            .catch((err) => subscriber.error(err));
-        });
-        break;
-      case 'POST':
-        response$ = new Observable((subscriber) => {
-          handlePostInventory(req.body as Omit<InventoryItem, 'id'>)
-            .then((created) => {
-              subscriber.next(new HttpResponse({ status: 201, body: created }));
-              subscriber.complete();
-            })
-            .catch((err) => subscriber.error(err));
-        });
-        break;
-      case 'PUT':
-        response$ = new Observable((subscriber) => {
-          handlePutInventory(itemId, req.body as Partial<InventoryItem>)
-            .then((updated) => {
-              subscriber.next(new HttpResponse({ status: 200, body: updated }));
-              subscriber.complete();
-            })
-            .catch((err) => subscriber.error(err));
-        });
-        break;
-      case 'DELETE':
-        response$ = new Observable((subscriber) => {
-          handleDeleteInventory(itemId)
-            .then(() => {
-              subscriber.next(new HttpResponse({ status: 204, body: null }));
-              subscriber.complete();
-            })
-            .catch((err) => subscriber.error(err));
-        });
-        break;
-      default:
-        return next(req);
+    const rest = remainder(cleanUrl, INVENTORY_PREFIX);
+    const segments = rest ? rest.split('/') : [];
+
+    if (req.method === 'GET' && rest === 'summary') {
+      response$ = handle(() => buildInventorySummary());
+    } else if (req.method === 'POST' && rest === 'restore') {
+      response$ = handle(
+        () => handleRestoreInventory(req.body as InventoryItem),
+        201
+      );
+    } else if (req.method === 'GET' && segments.length === 2 && segments[1] === 'movements') {
+      const limit = intParam(req.params.get('limit'), 20, 1, 100);
+      response$ = handle(() => handleGetMovements(segments[0], limit));
+    } else if (req.method === 'POST' && segments.length === 2 && segments[1] === 'movements') {
+      response$ = handle(
+        () => handlePostMovement(segments[0], req.body as StockMovementInput),
+        201
+      );
+    } else if (req.method === 'GET' && !rest) {
+      response$ = handle(() => handleGetInventory(req.params));
+    } else if (req.method === 'POST' && !rest) {
+      response$ = handle(
+        () => handlePostInventory(req.body as CreateInventoryItem),
+        201
+      );
+    } else if (req.method === 'PUT' && segments.length === 1) {
+      response$ = handle(
+        () => handlePutInventory(segments[0], req.body as UpdateInventoryItem)
+      );
+    } else if (req.method === 'DELETE' && segments.length === 1) {
+      response$ = handle(async () => {
+        await handleDeleteInventory(segments[0]);
+        return null;
+      }, 204);
+    } else {
+      return next(req);
     }
   } else if (isTreasury) {
-    switch (req.method) {
-      case 'GET':
-        response$ = new Observable((subscriber) => {
-          handleGetTreasury(req.params)
-            .then((res) => {
-              subscriber.next(new HttpResponse({ status: 200, body: res }));
-              subscriber.complete();
-            })
-            .catch((err) => subscriber.error(err));
-        });
-        break;
-      case 'POST':
-        response$ = new Observable((subscriber) => {
-          handlePostTreasury(req.body as Omit<TreasuryTransaction, 'id'>)
-            .then((created) => {
-              subscriber.next(new HttpResponse({ status: 201, body: created }));
-              subscriber.complete();
-            })
-            .catch((err) => subscriber.error(err));
-        });
-        break;
-      case 'PUT':
-        response$ = new Observable((subscriber) => {
-          handlePutTreasury(itemId, req.body as Partial<TreasuryTransaction>)
-            .then((updated) => {
-              subscriber.next(new HttpResponse({ status: 200, body: updated }));
-              subscriber.complete();
-            })
-            .catch((err) => subscriber.error(err));
-        });
-        break;
-      case 'DELETE':
-        response$ = new Observable((subscriber) => {
-          handleDeleteTreasury(itemId)
-            .then(() => {
-              subscriber.next(new HttpResponse({ status: 204, body: null }));
-              subscriber.complete();
-            })
-            .catch((err) => subscriber.error(err));
-        });
-        break;
-      default:
-        return next(req);
-    }
-  } else if (isPartners) {
-    switch (req.method) {
-      case 'GET':
-        response$ = new Observable((subscriber) => {
-          handleGetPartners(req.params)
-            .then((res) => {
-              subscriber.next(new HttpResponse({ status: 200, body: res }));
-              subscriber.complete();
-            })
-            .catch((err) => subscriber.error(err));
-        });
-        break;
-      case 'POST':
-        response$ = new Observable((subscriber) => {
-          handlePostPartner(req.body as Omit<B2BPartner, 'id'>)
-            .then((created) => {
-              subscriber.next(new HttpResponse({ status: 201, body: created }));
-              subscriber.complete();
-            })
-            .catch((err) => subscriber.error(err));
-        });
-        break;
-      default:
-        return next(req);
+    const rest = remainder(cleanUrl, TREASURY_PREFIX);
+    const segments = rest ? rest.split('/') : [];
+
+    if (req.method === 'GET' && rest === 'summary') {
+      response$ = handle(() => buildTreasurySummary());
+    } else if (req.method === 'PATCH' && segments.length === 2 && segments[1] === 'status') {
+      const body = req.body as { status: TransactionStatus };
+      response$ = handle(() => handleUpdateTreasuryStatus(segments[0], body.status));
+    } else if (req.method === 'GET' && !rest) {
+      response$ = handle(() => handleGetTreasury(req.params));
+    } else if (req.method === 'POST' && !rest) {
+      response$ = handle(
+        () => handlePostTreasury(req.body as TransactionInput),
+        201
+      );
+    } else {
+      return next(req);
     }
   } else {
-    return next(req);
+    const rest = remainder(cleanUrl, PARTNERS_PREFIX);
+    const segments = rest ? rest.split('/') : [];
+
+    if (req.method === 'GET' && !rest) {
+      response$ = handle(() => handleGetPartners(req.params));
+    } else if (req.method === 'POST' && !rest) {
+      response$ = handle(
+        () => handlePostPartner(req.body as PartnerInput),
+        201
+      );
+    } else if (req.method === 'PATCH' && segments.length === 2 && segments[1] === 'status') {
+      const body = req.body as { status: PartnerStatus; reason?: string };
+      response$ = handle(() =>
+        handleChangePartnerStatus(segments[0], body.status, body.reason)
+      );
+    } else if (req.method === 'PUT' && segments.length === 1) {
+      response$ = handle(() =>
+        handlePutPartner(segments[0], req.body as PartnerInput)
+      );
+    } else if (req.method === 'DELETE' && segments.length === 1) {
+      response$ = handle(async () => {
+        await handleDeletePartner(segments[0]);
+        return null;
+      }, 204);
+    } else {
+      return next(req);
+    }
   }
 
   return response$.pipe(delay(simulatedDelay));

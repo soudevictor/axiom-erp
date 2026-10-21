@@ -44,4 +44,4 @@ __screenshots__/
 Thumbs.db
 
 # agent context
-agent.md
+.vercel

@@ -1,245 +1,383 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  inject,
-  OnInit,
-} from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { LucideAngularModule, Database, RefreshCw, AlertTriangle, ShieldCheck } from 'lucide-angular';
-import { StatCardComponent } from '@/shared/ui/stat-card/stat-card.component';
-import { SkeletonLoaderComponent } from '@/shared/ui/skeleton/skeleton-loader.component';
-import { BadgeComponent } from '@/shared/ui/badge/badge.component';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { ArrowUpRight, LucideAngularModule, RefreshCw } from 'lucide-angular';
+import type { TreasuryTransaction } from '@/core/models/treasury.model';
 import { InventoryStore } from '@/features/inventory/data-access/inventory.store';
+import { PartnersStore } from '@/features/partners/data-access/partners.store';
 import { TreasuryStore } from '@/features/treasury/data-access/treasury.store';
-import { DatabaseSeedService } from '@/core/database/database-seed.service';
-import { ToastService } from '@/shared/ui/toast/toast.service';
+import { BadgeComponent } from '@/shared/ui/badge/badge.component';
+import { DrawerComponent } from '@/shared/ui/drawer/drawer.component';
+import { SkeletonLoaderComponent } from '@/shared/ui/skeleton/skeleton-loader.component';
+import { formatBrl, formatCompactBrl } from '@/shared/utils/currency-formatter';
+import { AlertPanelComponent } from './ui/alert-panel.component';
+import { CashflowChartComponent } from './ui/cashflow-chart.component';
+import { WarehouseTableComponent } from './ui/warehouse-table.component';
+
+const DATE_FORMATTER = new Intl.DateTimeFormat('pt-BR', {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+});
+
+const SHORT_DATE_FORMATTER = new Intl.DateTimeFormat('pt-BR', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+});
+
+const INTEGER_FORMATTER = new Intl.NumberFormat('pt-BR');
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
   imports: [
-    CommonModule,
+    RouterLink,
     LucideAngularModule,
-    StatCardComponent,
-    SkeletonLoaderComponent,
     BadgeComponent,
+    DrawerComponent,
+    SkeletonLoaderComponent,
+    CashflowChartComponent,
+    AlertPanelComponent,
+    WarehouseTableComponent,
   ],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="space-y-6">
-      <!-- Section Header -->
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <section class="space-y-4">
+      <header class="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 class="text-2xl font-bold text-content-primary tracking-tight">
-            Visão Geral Executiva
-          </h1>
-          <p class="text-xs text-content-muted mt-1">
-            Métricas estratégicas em tempo real da cadeia de suprimentos e tesouraria corporativa
+          <h1 class="text-[22px] font-semibold leading-8 tracking-tight text-content-primary">Visão geral</h1>
+          <p class="mt-0.5 text-sm text-content-muted">Resumo operacional de {{ referenceDate() }}.</p>
+        </div>
+        <button type="button" class="ui-btn" [disabled]="refreshing()" (click)="refresh()">
+          <lucide-icon [img]="RefreshCw" [size]="15" [class.animate-spin]="refreshing()" />
+          {{ refreshing() ? 'Atualizando…' : 'Atualizar' }}
+        </button>
+      </header>
+
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <a
+          routerLink="/inventory"
+          class="ui-panel group flex min-w-0 flex-col gap-1 px-4 py-3 transition-colors hover:border-border-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+        >
+          <div class="flex items-start justify-between gap-2">
+            <p class="ui-overline">Valor em estoque</p>
+            <lucide-icon [img]="ArrowUpRight" [size]="15" class="text-content-disabled transition-colors group-hover:text-brand" />
+          </div>
+          <p class="break-words font-mono text-[22px] font-medium leading-8 tracking-tight tabular-nums text-content-primary xl:text-[24px]">
+            {{ inventoryValueLabel() }}
           </p>
+          <p class="text-xs leading-5 text-content-muted">{{ inventoryContext() }}</p>
+        </a>
+
+        <a
+          routerLink="/treasury"
+          class="ui-panel group flex min-w-0 flex-col gap-1 px-4 py-3 transition-colors hover:border-border-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+        >
+          <div class="flex items-start justify-between gap-2">
+            <p class="ui-overline">Resultado realizado</p>
+            <lucide-icon [img]="ArrowUpRight" [size]="15" class="text-content-disabled transition-colors group-hover:text-brand" />
+          </div>
+          <p class="break-words font-mono text-[22px] font-medium leading-8 tracking-tight tabular-nums text-content-primary xl:text-[24px]">
+            {{ realizedValueLabel() }}
+          </p>
+          <p class="text-xs leading-5 text-content-muted">{{ realizedContext() }}</p>
+          @if (realizedDeltaLabel()) {
+            <p class="text-[11px] leading-4" [class]="realizedDeltaClass()">{{ realizedDeltaLabel() }}</p>
+          }
+        </a>
+
+        <a
+          routerLink="/treasury"
+          class="ui-panel group flex min-w-0 flex-col gap-1 px-4 py-3 transition-colors hover:border-border-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+        >
+          <div class="flex items-start justify-between gap-2">
+            <p class="ui-overline">A receber (30 d)</p>
+            <lucide-icon [img]="ArrowUpRight" [size]="15" class="text-content-disabled transition-colors group-hover:text-brand" />
+          </div>
+          <p class="break-words font-mono text-[22px] font-medium leading-8 tracking-tight tabular-nums text-content-primary xl:text-[24px]">
+            {{ receivablesValueLabel() }}
+          </p>
+          <p class="text-xs leading-5 text-content-muted">{{ receivablesContext() }}</p>
+        </a>
+
+        <a
+          routerLink="/treasury"
+          class="ui-panel group flex min-w-0 flex-col gap-1 px-4 py-3 transition-colors hover:border-border-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+        >
+          <div class="flex items-start justify-between gap-2">
+            <p class="ui-overline">A pagar (30 d)</p>
+            <lucide-icon [img]="ArrowUpRight" [size]="15" class="text-content-disabled transition-colors group-hover:text-brand" />
+          </div>
+          <p class="break-words font-mono text-[22px] font-medium leading-8 tracking-tight tabular-nums text-content-primary xl:text-[24px]">
+            {{ payablesValueLabel() }}
+          </p>
+          <p class="text-xs leading-5 text-content-muted">{{ payablesContext() }}</p>
+        </a>
+      </div>
+
+      <div class="grid gap-4 lg:grid-cols-12">
+        <div class="min-w-0 lg:col-span-8">
+          @if (treasuryReady()) {
+            <app-cashflow-chart [monthly]="monthly()" />
+          } @else if (treasurySectionLoading()) {
+            <section class="ui-panel p-4" aria-busy="true" aria-label="Carregando fluxo de caixa">
+              <app-skeleton-loader [count]="5" height="2.25rem" />
+            </section>
+          } @else {
+            <section class="ui-panel flex min-h-[300px] flex-col items-center justify-center px-6 py-10 text-center" role="alert">
+              <p class="text-sm font-medium text-content-primary">Não foi possível carregar o fluxo</p>
+              <p class="mt-1 text-sm text-content-muted">O resumo da tesouraria não respondeu.</p>
+              <button type="button" class="ui-btn mt-4" (click)="reloadTreasury()">Tentar novamente</button>
+            </section>
+          }
         </div>
 
-        <div class="flex items-center gap-3">
-          <app-badge variant="SUCCESS" label="Online / Local DB Sync" />
-          <button
-            type="button"
-            (click)="resetLocalDatabase()"
-            class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-canvas-surface border border-border-subtle hover:bg-canvas-elevated text-content-muted text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-brand"
-            title="Limpar e repopular a base Dexie local com 500 registros"
-          >
-            <lucide-icon [img]="DatabaseIcon" [size]="14" />
-            <span>Repopular Banco (Seed)</span>
-          </button>
+        <div class="min-w-0 lg:col-span-4">
+          <app-alert-panel
+            [loading]="loading()"
+            [stockReady]="inventoryReady()"
+            [criticalItems]="criticalItems()"
+            [lowStockCount]="lowStockCount()"
+            [outOfStockCount]="outOfStockCount()"
+            [treasuryReady]="treasuryReady()"
+            [overdue]="overdueTransactions()"
+            [partnersReady]="partnersReady()"
+            [creditUsagePct]="creditUsagePct()"
+            [blockedPartners]="blockedPartners()"
+            (openOverdue)="overdueOpen.set(true)"
+            (retry)="refresh()"
+          />
         </div>
       </div>
 
-      <!-- KPI StatCards Grid (with Skeletons for Loading State) -->
-      @if (inventoryStore.loading() || treasuryStore.loading()) {
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" aria-live="polite">
-          <div class="p-5 rounded-xl border border-border-subtle bg-canvas-surface">
-            <app-skeleton-loader height="5rem" />
-          </div>
-          <div class="p-5 rounded-xl border border-border-subtle bg-canvas-surface">
-            <app-skeleton-loader height="5rem" />
-          </div>
-          <div class="p-5 rounded-xl border border-border-subtle bg-canvas-surface">
-            <app-skeleton-loader height="5rem" />
-          </div>
-          <div class="p-5 rounded-xl border border-border-subtle bg-canvas-surface">
-            <app-skeleton-loader height="5rem" />
-          </div>
-        </div>
+      @if (inventoryReady()) {
+        <app-warehouse-table [warehouses]="warehouses()" />
+      } @else if (inventorySectionLoading()) {
+        <section class="ui-panel p-4" aria-busy="true" aria-label="Carregando estoque por armazém">
+          <app-skeleton-loader [count]="5" height="2.25rem" />
+        </section>
       } @else {
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-fade-in">
-          <app-stat-card
-            title="Valor Total em Estoque"
-            [value]="'R$ ' + (inventoryStore.totalStockValue() | number:'1.2-2':'pt-BR')"
-            [tooltipText]="'R$ ' + (inventoryStore.totalStockValue() | number:'1.2-2':'pt-BR')"
-            [trend]="{ value: 12.4, isPositive: true, label: 'em relação ao mês anterior' }"
-            iconName="Package"
-            subtitle="Ativos em 5 armazéns"
-            valueClass="font-mono tabular-nums tracking-tight whitespace-nowrap truncate block"
-          />
-
-          <app-stat-card
-            title="Itens com Estoque Baixo"
-            [value]="inventoryStore.lowStockCount()"
-            [trend]="{ value: 4.2, isPositive: false, label: 'exigem reposição urgente' }"
-            iconName="AlertTriangle"
-            subtitle="Abaixo do limite de segurança"
-            valueClass="font-mono tabular-nums tracking-tight whitespace-nowrap"
-          />
-
-          <app-stat-card
-            title="Saldo Consolidado de Caixa"
-            [value]="'R$ ' + (treasuryStore.totalBalance() | number:'1.2-2':'pt-BR')"
-            [tooltipText]="'R$ ' + (treasuryStore.totalBalance() | number:'1.2-2':'pt-BR')"
-            [trend]="{ value: 8.7, isPositive: true, label: 'posição financeira' }"
-            iconName="Wallet"
-            subtitle="Tesouraria & Bancos"
-            valueClass="font-mono tabular-nums tracking-tight whitespace-nowrap truncate block"
-          />
-
-          <app-stat-card
-            title="Contas a Receber"
-            [value]="'R$ ' + (treasuryStore.totalReceivables() | number:'1.2-2':'pt-BR')"
-            [tooltipText]="'R$ ' + (treasuryStore.totalReceivables() | number:'1.2-2':'pt-BR')"
-            [trend]="{ value: 2.1, isPositive: true, label: 'carteira adimplente' }"
-            iconName="TrendingUp"
-            subtitle="Previsão de entrada 30d"
-            valueClass="font-mono tabular-nums tracking-tight whitespace-nowrap truncate block"
-          />
-        </div>
+        <section class="ui-panel flex flex-col items-center px-6 py-10 text-center" role="alert">
+          <p class="text-sm font-medium text-content-primary">Não foi possível carregar o estoque</p>
+          <p class="mt-1 text-sm text-content-muted">O resumo do inventário não respondeu.</p>
+          <button type="button" class="ui-btn mt-4" (click)="reloadInventory()">Tentar novamente</button>
+        </section>
       }
+    </section>
 
-      <!-- Deferrable View Analytics Section -->
-      @defer (on viewport) {
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <!-- Main Chart Container -->
-          <div class="lg:col-span-2 p-6 rounded-xl border border-border-subtle bg-canvas-surface backdrop-blur-md space-y-4">
-            <div class="flex items-center justify-between">
-              <div>
-                <h3 class="text-sm font-semibold text-content-primary">
-                  Fluxo de Caixa vs. Giro de Inventário (Últimos 6 meses)
-                </h3>
-                <p class="text-xs text-content-muted">Projeção unificada de faturamento e abastecimento</p>
+    <app-drawer
+      [open]="overdueOpen()"
+      title="Contas vencidas"
+      [description]="overdueDescription()"
+      maxWidth="520px"
+      (closed)="overdueOpen.set(false)"
+    >
+      <ul class="divide-y divide-border-subtle">
+        @for (transaction of overdueTransactions(); track transaction.id) {
+          <li class="px-4 py-3">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <p class="truncate text-sm font-medium text-content-primary" [title]="transaction.description">
+                  {{ transaction.description }}
+                </p>
+                <p class="mt-0.5 text-xs text-content-muted">
+                  {{ transaction.partnerName }} · vence {{ formatDate(transaction.dueDate) }}
+                </p>
               </div>
-              <span class="text-xs text-brand-secondary font-mono">Simulação em Tempo Real</span>
-            </div>
-
-            <!-- SVG Animated Chart Representation (corporate cobalt palette, no neon gradients) -->
-            <div class="h-64 flex flex-col justify-end p-4 rounded-lg bg-canvas-base border border-border-subtle space-y-4">
-              <div class="flex items-end justify-between h-48 gap-3 px-4 pt-4 border-b border-border-subtle">
-                <!-- Bar 1 -->
-                <div class="flex-1 bg-brand/40 hover:bg-brand/60 rounded-t h-[45%] transition-all duration-200 relative group">
-                  <div class="opacity-0 group-hover:opacity-100 absolute -top-9 left-1/2 -translate-x-1/2 backdrop-blur-md bg-canvas-elevated/90 border border-border-subtle text-[10px] px-2 py-1 rounded z-50 text-brand font-mono whitespace-nowrap">
-                    R$ 420K
-                  </div>
-                </div>
-                <!-- Bar 2 -->
-                <div class="flex-1 bg-brand/50 hover:bg-brand/70 rounded-t h-[60%] transition-all duration-200 relative group">
-                  <div class="opacity-0 group-hover:opacity-100 absolute -top-9 left-1/2 -translate-x-1/2 backdrop-blur-md bg-canvas-elevated/90 border border-border-subtle text-[10px] px-2 py-1 rounded z-50 text-brand font-mono whitespace-nowrap">
-                    R$ 580K
-                  </div>
-                </div>
-                <!-- Bar 3 -->
-                <div class="flex-1 bg-brand/60 hover:bg-brand/80 rounded-t h-[75%] transition-all duration-200 relative group">
-                  <div class="opacity-0 group-hover:opacity-100 absolute -top-9 left-1/2 -translate-x-1/2 backdrop-blur-md bg-canvas-elevated/90 border border-border-subtle text-[10px] px-2 py-1 rounded z-50 text-brand font-mono whitespace-nowrap">
-                    R$ 790K
-                  </div>
-                </div>
-                <!-- Bar 4 -->
-                <div class="flex-1 bg-brand/70 hover:bg-brand/90 rounded-t h-[85%] transition-all duration-200 relative group">
-                  <div class="opacity-0 group-hover:opacity-100 absolute -top-9 left-1/2 -translate-x-1/2 backdrop-blur-md bg-canvas-elevated/90 border border-border-subtle text-[10px] px-2 py-1 rounded z-50 text-brand font-mono whitespace-nowrap">
-                    R$ 950K
-                  </div>
-                </div>
-                <!-- Bar 5 -->
-                <div class="flex-1 bg-brand/60 hover:bg-brand/80 rounded-t h-[70%] transition-all duration-200 relative group">
-                  <div class="opacity-0 group-hover:opacity-100 absolute -top-9 left-1/2 -translate-x-1/2 backdrop-blur-md bg-canvas-elevated/90 border border-border-subtle text-[10px] px-2 py-1 rounded z-50 text-brand font-mono whitespace-nowrap">
-                    R$ 820K
-                  </div>
-                </div>
-                <!-- Bar 6 — current month, accent color -->
-                <div class="flex-1 rounded-t h-[95%] transition-all duration-200 relative group" style="background-color: #38bdf8; opacity: 0.9;">
-                  <div class="opacity-0 group-hover:opacity-100 absolute -top-9 left-1/2 -translate-x-1/2 backdrop-blur-md bg-canvas-elevated/90 border border-border-subtle text-[10px] px-2 py-1 rounded z-50 font-mono font-bold whitespace-nowrap" style="color: #38bdf8;">
-                    R$ 1.25M
-                  </div>
-                </div>
-              </div>
-              <div class="flex justify-between text-[11px] text-content-disabled px-4 font-mono">
-                <span>MAR</span>
-                <span>ABR</span>
-                <span>MAI</span>
-                <span>JUN</span>
-                <span>JUL</span>
-                <span class="text-brand font-bold">AGO (ATUAL)</span>
+              <div class="shrink-0 text-right">
+                <p class="font-mono text-sm tabular-nums text-content-primary">{{ formatCurrency(transaction.amount) }}</p>
+                <app-badge
+                  class="mt-1 inline-block"
+                  [variant]="transaction.type === 'INCOME' ? 'INFO' : 'NEUTRAL'"
+                  [label]="transaction.type === 'INCOME' ? 'Receita' : 'Despesa'"
+                />
               </div>
             </div>
-          </div>
+          </li>
+        }
+      </ul>
 
-          <!-- System Alerts Container -->
-          <div class="p-6 rounded-xl border border-border-subtle bg-canvas-surface backdrop-blur-md space-y-4">
-            <h3 class="text-sm font-semibold text-content-primary">
-              Alertas & Notificações Ativas
-            </h3>
-            <div class="space-y-3">
-              <div class="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-start gap-3">
-                <lucide-icon [img]="AlertTriangleIcon" [size]="18" class="text-amber-400 mt-0.5 shrink-0" />
-                <div>
-                  <p class="text-xs font-semibold text-amber-200">Reposição Urgente</p>
-                  <p class="text-[11px] text-amber-400/80 mt-0.5">
-                    {{ inventoryStore.lowStockCount() }} SKUs atingiram o estoque de segurança.
-                  </p>
-                </div>
-              </div>
-
-              <div class="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-start gap-3">
-                <lucide-icon [img]="ShieldCheckIcon" [size]="18" class="text-emerald-400 mt-0.5 shrink-0" />
-                <div>
-                  <p class="text-xs font-semibold text-emerald-200">Integridade IndexedDB</p>
-                  <p class="text-[11px] text-emerald-400/80 mt-0.5">
-                    500 registros de produtos e 120 transações em sincronia local.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      } @placeholder {
-        <div class="p-6 rounded-xl border border-border-subtle bg-canvas-surface">
-          <app-skeleton-loader height="16rem" />
-        </div>
-      }
-    </div>
+      <div drawer-footer class="flex items-center justify-between gap-3 px-4 py-3">
+        <a routerLink="/treasury" class="ui-btn ui-btn-primary">Abrir tesouraria</a>
+        <button type="button" class="ui-btn" (click)="overdueOpen.set(false)">Fechar</button>
+      </div>
+    </app-drawer>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class DashboardComponent implements OnInit {
   protected readonly inventoryStore = inject(InventoryStore);
   protected readonly treasuryStore = inject(TreasuryStore);
-  private readonly seedService = inject(DatabaseSeedService);
-  private readonly toastService = inject(ToastService);
+  protected readonly partnersStore = inject(PartnersStore);
 
-  protected readonly DatabaseIcon = Database;
-  protected readonly RefreshCwIcon = RefreshCw;
-  protected readonly AlertTriangleIcon = AlertTriangle;
-  protected readonly ShieldCheckIcon = ShieldCheck;
+  protected readonly ArrowUpRight = ArrowUpRight;
+  protected readonly RefreshCw = RefreshCw;
+
+  protected readonly overdueOpen = signal(false);
+
+  protected readonly inventoryReady = computed(() => this.inventoryStore.summary() !== null);
+  protected readonly treasuryReady = computed(() => this.treasuryStore.summary() !== null);
+  protected readonly partnersReady = computed(
+    () =>
+      this.partnersStore.items().length > 0 ||
+      (!this.partnersStore.loading() && !this.partnersStore.error())
+  );
+
+  protected readonly inventorySectionLoading = computed(
+    () => this.inventoryStore.summaryLoading() && !this.inventoryReady()
+  );
+  protected readonly treasurySectionLoading = computed(
+    () => this.treasuryStore.summaryLoading() && !this.treasuryReady()
+  );
+  protected readonly loading = computed(
+    () =>
+      this.inventorySectionLoading() ||
+      this.treasurySectionLoading() ||
+      (this.partnersStore.loading() && !this.partnersReady())
+  );
+  protected readonly refreshing = computed(
+    () =>
+      this.inventoryStore.summaryLoading() ||
+      this.treasuryStore.summaryLoading() ||
+      this.partnersStore.loading()
+  );
+
+  protected readonly referenceDate = computed(() => DATE_FORMATTER.format(new Date()));
+
+  protected readonly warehouses = computed(() => this.inventoryStore.summary()?.byWarehouse ?? []);
+  protected readonly criticalItems = computed(
+    () => this.inventoryStore.summary()?.criticalItems ?? []
+  );
+  protected readonly lowStockCount = computed(
+    () => this.inventoryStore.summary()?.lowStockCount ?? 0
+  );
+  protected readonly outOfStockCount = computed(
+    () => this.inventoryStore.summary()?.outOfStockCount ?? 0
+  );
+
+  protected readonly monthly = computed(() => this.treasuryStore.summary()?.monthly ?? []);
+
+  private readonly realized = computed(() => this.treasuryStore.summary()?.realized ?? null);
+  private readonly lastMonth = computed(() => this.treasuryStore.summary()?.lastMonth ?? null);
+  private readonly upcoming30 = computed(() => this.treasuryStore.summary()?.upcoming30 ?? null);
+  private readonly aging = computed(() => this.treasuryStore.summary()?.aging ?? null);
+
+  protected readonly overdueTransactions = computed<readonly TreasuryTransaction[]>(() =>
+    [...(this.aging()?.overdue ?? [])].sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+  );
+
+  private readonly overdueReceivable = computed(() =>
+    this.overdueTransactions()
+      .filter((transaction) => transaction.type === 'INCOME')
+      .reduce((sum, transaction) => sum + transaction.amount, 0)
+  );
+  private readonly overduePayable = computed(() =>
+    this.overdueTransactions()
+      .filter((transaction) => transaction.type === 'EXPENSE')
+      .reduce((sum, transaction) => sum + transaction.amount, 0)
+  );
+
+  protected readonly overdueDescription = computed(() => {
+    const items = this.overdueTransactions();
+    if (items.length === 0) return 'Nenhum título vencido';
+    const total = items.reduce((sum, transaction) => sum + transaction.amount, 0);
+    return `${items.length} ${items.length === 1 ? 'título' : 'títulos'} · ${formatBrl(total)}`;
+  });
+
+  protected readonly inventoryValueLabel = computed(() => {
+    const summary = this.inventoryStore.summary();
+    return summary ? formatBrl(summary.totalStockValue) : '—';
+  });
+
+  protected readonly inventoryContext = computed(() => {
+    const summary = this.inventoryStore.summary();
+    if (!summary) return this.inventorySectionLoading() ? 'Carregando resumo…' : 'Resumo indisponível';
+    return `${summary.totalSkus} SKUs · ${INTEGER_FORMATTER.format(summary.totalUnits)} unidades`;
+  });
+
+  protected readonly realizedValueLabel = computed(() => {
+    const realized = this.realized();
+    return realized ? formatBrl(realized.balance) : '—';
+  });
+
+  protected readonly realizedContext = computed(() => {
+    const realized = this.realized();
+    if (!realized) return this.treasurySectionLoading() ? 'Carregando resumo…' : 'Resumo indisponível';
+    return `Receitas ${formatCompactBrl(realized.income)} − despesas ${formatCompactBrl(realized.expense)}`;
+  });
+
+  protected readonly realizedDeltaLabel = computed(() => {
+    const realized = this.realized();
+    const lastMonth = this.lastMonth();
+    if (!realized || !lastMonth) return '';
+    const delta = realized.balance - lastMonth.balance;
+    if (Math.abs(delta) < 0.01) return 'Sem variação vs. mês anterior';
+    return `${delta > 0 ? '+' : '−'}${formatCompactBrl(Math.abs(delta))} vs. mês anterior`;
+  });
+
+  protected readonly realizedDeltaClass = computed(() => {
+    const realized = this.realized();
+    const lastMonth = this.lastMonth();
+    if (!realized || !lastMonth) return 'text-content-muted';
+    const delta = realized.balance - lastMonth.balance;
+    if (Math.abs(delta) < 0.01) return 'text-content-muted';
+    return delta > 0 ? 'text-state-success' : 'text-state-danger';
+  });
+
+  protected readonly receivablesValueLabel = computed(() => {
+    const upcoming = this.upcoming30();
+    return upcoming ? formatBrl(upcoming.receivables) : '—';
+  });
+
+  protected readonly payablesValueLabel = computed(() => {
+    const upcoming = this.upcoming30();
+    return upcoming ? formatBrl(upcoming.payables) : '—';
+  });
+
+  protected readonly receivablesContext = computed(() => {
+    const upcoming = this.upcoming30();
+    if (!upcoming) return this.treasurySectionLoading() ? 'Carregando resumo…' : 'Resumo indisponível';
+    const count = `${upcoming.receivableCount} ${upcoming.receivableCount === 1 ? 'título' : 'títulos'}`;
+    if (this.overdueReceivable() <= 0) return `${count} · sem vencidos`;
+    return `${count} · inclui ${formatCompactBrl(this.overdueReceivable())} vencidos`;
+  });
+
+  protected readonly payablesContext = computed(() => {
+    const upcoming = this.upcoming30();
+    if (!upcoming) return this.treasurySectionLoading() ? 'Carregando resumo…' : 'Resumo indisponível';
+    const count = `${upcoming.payableCount} ${upcoming.payableCount === 1 ? 'título' : 'títulos'}`;
+    if (this.overduePayable() <= 0) return `${count} · sem vencidos`;
+    return `${count} · inclui ${formatCompactBrl(this.overduePayable())} vencidos`;
+  });
+
+  protected readonly creditUsagePct = computed(() => this.partnersStore.creditUsagePct());
+  protected readonly blockedPartners = computed(() => this.partnersStore.blocked());
+
+  protected readonly formatCurrency = formatBrl;
 
   ngOnInit(): void {
-    if (this.inventoryStore.items().length === 0) {
-      this.inventoryStore.loadItems();
-    }
-    if (this.treasuryStore.transactions().length === 0) {
-      this.treasuryStore.loadTransactions();
-    }
+    void this.inventoryStore.loadSummary();
+    void this.treasuryStore.loadSummary();
+    void this.partnersStore.load(true);
   }
 
-  protected async resetLocalDatabase(): Promise<void> {
-    await this.seedService.resetDatabase();
-    await this.inventoryStore.loadItems();
-    await this.treasuryStore.loadTransactions();
-    this.toastService.success(
-      'Banco Local Reiniciado',
-      'O banco IndexedDB foi repopulado com 500 produtos e 120 transações via Faker.js.'
-    );
+  protected refresh(): void {
+    void Promise.all([
+      this.inventoryStore.loadSummary(),
+      this.treasuryStore.loadSummary(),
+      this.partnersStore.load(true),
+    ]);
+  }
+
+  protected reloadInventory(): void {
+    void this.inventoryStore.loadSummary();
+  }
+
+  protected reloadTreasury(): void {
+    void this.treasuryStore.loadSummary();
+  }
+
+  protected formatDate(value: string): string {
+    const date = new Date(value.length === 10 ? `${value}T12:00:00` : value);
+    return Number.isNaN(date.getTime()) ? value : SHORT_DATE_FORMATTER.format(date);
   }
 }

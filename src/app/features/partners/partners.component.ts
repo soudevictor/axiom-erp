@@ -1,630 +1,454 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  DestroyRef,
-  inject,
-  OnInit,
-  signal,
-} from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
-import { HttpClient } from '@angular/common/http';
 import {
-  FormBuilder,
-  FormGroup,
-  FormsModule,
-  ReactiveFormsModule,
-  Validators,
-} from '@angular/forms';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { firstValueFrom } from 'rxjs';
-import {
-  LucideAngularModule,
-  Users,
-  Search,
+  AlertCircle,
   Plus,
-  Building2,
-  CheckCircle2,
-  X,
-  Save,
-  ShieldCheck,
-  CreditCard,
   RefreshCw,
+  Search,
+  ShieldCheck,
+  Trash2,
+  Users,
+  Edit2,
+  LucideAngularModule,
 } from 'lucide-angular';
-
-import { StatCardComponent } from '@/shared/ui/stat-card/stat-card.component';
-import { BadgeComponent } from '@/shared/ui/badge/badge.component';
-import { CnpjMaskDirective } from '@/shared/directives/cnpj-mask.directive';
+import {
+  PARTNER_CATEGORIES,
+  PARTNER_CATEGORY_LABELS,
+  PARTNER_STATUS_LABELS,
+  type B2BPartner,
+  type PartnerCategory,
+  type PartnerStatus,
+} from '@/core/models/partner.model';
+import { PartnersStore } from '@/features/partners/data-access/partners.store';
+import { BadgeComponent, type BadgeVariant } from '@/shared/ui/badge/badge.component';
+import { ConfirmDialogComponent } from '@/shared/ui/confirm-dialog/confirm-dialog.component';
 import { SkeletonLoaderComponent } from '@/shared/ui/skeleton/skeleton-loader.component';
-import { isValidCnpj } from '@/shared/utils/cnpj-validator';
 import { ToastService } from '@/shared/ui/toast/toast.service';
+import { formatBrl } from '@/shared/utils/currency-formatter';
+import { PartnerFormModalComponent } from './ui/partner-form-modal.component';
+import { PartnerStatusModalComponent } from './ui/partner-status-modal.component';
 
-export interface B2BPartner {
-  readonly id: string;
-  readonly cnpj: string;
-  readonly companyName: string;
-  readonly category: 'FORNECEDOR' | 'CLIENTE_DIRETO' | 'DISTRIBUIDOR';
-  readonly status: 'HOMOLOGADO' | 'EM_ANALISE' | 'BLOQUEADO';
-  readonly creditLimit: number;
-  /** Credit used so far (0–creditLimit) */
-  readonly creditUsed: number;
-  readonly state: string;
-}
-
-const PARTNERS_API = '/api/v1/partners';
-
-const SEED_PARTNERS: readonly Omit<B2BPartner, 'id'>[] = [
-  {
-    cnpj: '12.345.678/0001-90',
-    companyName: 'TechSupply Brasil Distribuidora Ltda',
-    category: 'FORNECEDOR',
-    status: 'HOMOLOGADO',
-    creditLimit: 550000,
-    creditUsed: 385000,
-    state: 'SP',
-  },
-  {
-    cnpj: '98.765.432/0001-10',
-    companyName: 'MegaLogística Soluções de Transporte S.A.',
-    category: 'DISTRIBUIDOR',
-    status: 'HOMOLOGADO',
-    creditLimit: 300000,
-    creditUsed: 75000,
-    state: 'RJ',
-  },
-  {
-    cnpj: '45.111.222/0001-33',
-    companyName: 'Escritório Central de Eletrônicos Eireli',
-    category: 'CLIENTE_DIRETO',
-    status: 'HOMOLOGADO',
-    creditLimit: 120000,
-    creditUsed: 108000,
-    state: 'MG',
-  },
-  {
-    cnpj: '77.888.999/0001-44',
-    companyName: 'Hardware & Cia Suprimentos Industriais',
-    category: 'FORNECEDOR',
-    status: 'EM_ANALISE',
-    creditLimit: 450000,
-    creditUsed: 0,
-    state: 'PR',
-  },
-  {
-    cnpj: '33.444.555/0001-55',
-    companyName: 'Global Logistics & Freight Corp',
-    category: 'DISTRIBUIDOR',
-    status: 'HOMOLOGADO',
-    creditLimit: 800000,
-    creditUsed: 240000,
-    state: 'RS',
-  },
-];
-
-/** Custom CNPJ validator for reactive forms */
-function cnpjValidator(control: { value: string }): { cnpjInvalid: boolean } | null {
-  const raw = control.value ?? '';
-  if (!raw) return null;
-  return isValidCnpj(raw) ? null : { cnpjInvalid: true };
-}
+const DATE_FORMATTER = new Intl.DateTimeFormat('pt-BR', {
+  day: '2-digit',
+  month: 'short',
+  hour: '2-digit',
+  minute: '2-digit',
+});
 
 @Component({
   selector: 'app-partners',
   standalone: true,
   imports: [
-    CommonModule,
-    FormsModule,
-    ReactiveFormsModule,
     LucideAngularModule,
-    StatCardComponent,
     BadgeComponent,
-    CnpjMaskDirective,
+    ConfirmDialogComponent,
     SkeletonLoaderComponent,
+    PartnerFormModalComponent,
+    PartnerStatusModalComponent,
   ],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="space-y-6">
-      <!-- Section Header -->
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <section class="space-y-4">
+      <header class="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 class="text-2xl font-bold text-content-primary tracking-tight">
-            Gestão de Parceiros B2B &amp; Homologação
-          </h1>
-          <p class="text-xs text-content-muted mt-1">
-            Cadastro unificado de fornecedores, distribuidores, compliance e limites de crédito
+          <h1 class="text-[22px] font-semibold leading-8 tracking-tight text-content-primary">Parceiros</h1>
+          <p class="mt-0.5 max-w-[62ch] text-sm text-content-muted">
+            Fornecedores, clientes e distribuidores com homologação e limite de crédito.
           </p>
         </div>
+        <button type="button" class="ui-btn ui-btn-primary" (click)="openCreate()">
+          <lucide-icon [img]="Plus" [size]="16" />
+          Novo parceiro
+        </button>
+      </header>
 
-        <div class="flex items-center gap-3">
-          <button
-            type="button"
-            (click)="loadPartners()"
-            class="p-2 rounded-lg border border-border-subtle bg-canvas-surface text-content-muted hover:text-content-primary hover:bg-canvas-elevated transition-colors focus-visible:ring-2 focus-visible:ring-brand"
-            title="Recarregar parceiros"
-            aria-label="Recarregar parceiros"
-          >
-            <lucide-icon [img]="RefreshCwIcon" [size]="18" [ngClass]="{ 'animate-spin': loading() }" />
-          </button>
-
-          <button
-            type="button"
-            (click)="openModal()"
-            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand hover:bg-brand-hover text-white font-medium text-xs shadow-brand-glow transition-colors self-start sm:self-auto focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-canvas-base"
-          >
-            <lucide-icon [img]="PlusIcon" [size]="16" />
-            <span>Cadastrar Parceiro</span>
-          </button>
+      <div class="ui-panel grid grid-cols-2 divide-y divide-border-subtle sm:grid-cols-4 sm:divide-y-0 sm:divide-x" role="region" aria-label="Indicadores de parceiros">
+        <div class="px-4 py-3">
+          <p class="text-xs text-content-muted">Parceiros</p>
+          <p class="mt-1 font-mono text-2xl font-medium tabular-nums text-content-primary">{{ store.total() }}</p>
+          <p class="mt-0.5 text-xs text-content-muted">{{ store.homologated() }} homologados</p>
+        </div>
+        <div class="px-4 py-3">
+          <p class="text-xs text-content-muted">Crédito utilizado</p>
+          <p class="mt-1 font-mono text-2xl font-medium tabular-nums text-content-primary">{{ formatCompact(store.creditUsedTotal()) }}</p>
+          <p class="mt-0.5 text-xs text-content-muted">{{ formatPct(store.creditUsagePct()) }} de {{ formatCompact(store.creditLimitTotal()) }}</p>
+        </div>
+        <div class="px-4 py-3">
+          <p class="text-xs text-content-muted">Em análise</p>
+          <p class="mt-1 font-mono text-2xl font-medium tabular-nums text-state-warning">{{ store.inAnalysis() }}</p>
+          <p class="mt-0.5 text-xs text-content-muted">Aguardando homologação</p>
+        </div>
+        <div class="px-4 py-3">
+          <p class="text-xs text-content-muted">Bloqueados</p>
+          <p class="mt-1 font-mono text-2xl font-medium tabular-nums" [class]="store.blocked() > 0 ? 'text-state-danger' : 'text-content-primary'">{{ store.blocked() }}</p>
+          <p class="mt-0.5 text-xs text-content-muted">Crédito suspenso</p>
         </div>
       </div>
 
-      <!-- KPI Summary -->
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <app-stat-card
-          title="Total de Parceiros Cadastrados"
-          [value]="partners().length"
-          subtitle="Rede de contatos B2B ativa"
-          iconName="Users"
-        />
+      <div class="ui-panel overflow-hidden">
+        <div class="ui-toolbar">
+          <label class="relative min-w-0 flex-1 sm:max-w-[320px]">
+            <span class="sr-only">Buscar parceiros</span>
+            <lucide-icon [img]="Search" [size]="16" class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-content-muted" />
+            <input
+              type="search"
+              class="ui-field pl-8"
+              placeholder="Nome, CNPJ ou e-mail"
+              [value]="store.filters().search"
+              (input)="onSearch($event)"
+            />
+          </label>
 
-        <app-stat-card
-          title="Limite de Crédito Global"
-          [value]="'R$ ' + (totalCreditLimit() | number:'1.2-2':'pt-BR')"
-          subtitle="Política de crédito ativa"
-          iconName="Building2"
-          valueClass="font-mono tabular-nums tracking-tight whitespace-nowrap"
-        />
+          <select class="ui-field w-auto min-w-[145px]" aria-label="Filtrar por categoria" (change)="onCategory($event)">
+            <option value="ALL" [selected]="store.filters().category === 'ALL'">Todas as categorias</option>
+            @for (category of categories; track category) {
+              <option [value]="category" [selected]="store.filters().category === category">{{ categoryLabels[category] }}</option>
+            }
+          </select>
 
-        <app-stat-card
-          title="Parceiros Homologados"
-          [value]="homologadosPercentage() + '%'"
-          subtitle="Compliance &amp; A11y ok"
-          iconName="CheckCircle2"
-        />
-      </div>
+          <select class="ui-field w-auto min-w-[135px]" aria-label="Filtrar por status" (change)="onStatus($event)">
+            <option value="ALL" [selected]="store.filters().status === 'ALL'">Todos os status</option>
+            @for (status of statuses; track status) {
+              <option [value]="status" [selected]="store.filters().status === status">{{ statusLabels[status] }}</option>
+            }
+          </select>
 
-      <!-- Filter Bar -->
-      <div class="p-4 rounded-xl border border-border-subtle bg-canvas-surface backdrop-blur-md flex items-center justify-between gap-4">
-        <div class="relative flex-1 max-w-md">
-          <lucide-icon [img]="SearchIcon" [size]="16" class="absolute left-3 top-1/2 -translate-y-1/2 text-content-disabled" />
-          <input
-            type="search"
-            [ngModel]="searchQuery()"
-            (ngModelChange)="searchQuery.set($event)"
-            placeholder="Buscar por CNPJ ou Razão Social..."
-            class="w-full pl-9 pr-4 py-2 rounded-lg bg-canvas-elevated border border-border-subtle text-xs text-content-primary placeholder-content-disabled focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors"
-            aria-label="Buscar parceiros por CNPJ ou razão social"
-          />
+          <select class="ui-field w-auto min-w-[90px]" aria-label="Filtrar por UF" (change)="onState($event)">
+            <option value="ALL" [selected]="store.filters().state === 'ALL'">UF</option>
+            @for (state of store.states(); track state) {
+              <option [value]="state" [selected]="store.filters().state === state">{{ state }}</option>
+            }
+          </select>
+
+          @if (store.hasActiveFilters()) {
+            <button type="button" class="ui-btn h-9 border-transparent px-2 text-xs text-content-muted" (click)="store.clearFilters()">
+              Limpar filtros
+            </button>
+          }
         </div>
 
-        <div class="text-xs text-content-muted font-mono">
-          {{ filteredPartners().length }} parceiros filtrados
+        <div class="ui-manifest border-b border-border-subtle px-4 py-2">
+          <span>{{ store.filteredTotal() }} {{ store.filteredTotal() === 1 ? 'parceiro exibido' : 'parceiros exibidos' }}</span>
+          <span aria-hidden="true">·</span>
+          <span>{{ store.total() }} no total</span>
+          <span aria-hidden="true">·</span>
+          <span>atualizado {{ lastUpdatedLabel() }}</span>
         </div>
-      </div>
 
-      <!-- Partners Table -->
-      <div class="p-6 rounded-xl border border-border-subtle bg-canvas-surface backdrop-blur-md">
-        <!-- Loading Skeleton -->
-        @if (loading()) {
-          <div class="space-y-3" aria-live="polite">
-            <app-skeleton-loader [count]="5" height="2.5rem" />
+        @if (store.loading()) {
+          <div class="p-4">
+            <app-skeleton-loader [count]="6" height="3rem" />
           </div>
-        }
-
-        <!-- Error State -->
-        @else if (error()) {
-          <div class="p-4 rounded-lg bg-state-danger-subtle border border-state-danger text-state-danger text-xs" role="alert">
-            {{ error() }}
-            <button type="button" (click)="loadPartners()" class="ml-3 underline">Tentar novamente</button>
+        } @else if (store.error()) {
+          <div class="flex flex-col items-start gap-3 px-4 py-8" role="alert">
+            <div class="flex items-center gap-2 text-sm text-state-danger">
+              <lucide-icon [img]="AlertCircle" [size]="18" />
+              <span>{{ store.error() }}</span>
+            </div>
+            <button type="button" class="ui-btn" (click)="store.refresh()">
+              <lucide-icon [img]="RefreshCw" [size]="15" />
+              Tentar novamente
+            </button>
           </div>
-        }
-
-        <!-- Data Table -->
-        @else {
-          <div class="overflow-x-auto">
-            <table class="w-full text-left text-xs border-collapse">
+        } @else if (store.isEmpty()) {
+          <div class="flex flex-col items-center px-4 py-12 text-center">
+            <span class="flex h-10 w-10 items-center justify-center rounded-full bg-canvas-elevated text-content-muted">
+              <lucide-icon [img]="Users" [size]="20" />
+            </span>
+            <h2 class="mt-3 text-sm font-medium text-content-primary">Nenhum parceiro cadastrado</h2>
+            <p class="mt-1 max-w-[38ch] text-sm text-content-muted">Comece cadastrando o primeiro fornecedor ou cliente da operação.</p>
+            <button type="button" class="ui-btn ui-btn-primary mt-4" (click)="openCreate()">
+              <lucide-icon [img]="Plus" [size]="15" />
+              Cadastrar parceiro
+            </button>
+          </div>
+        } @else if (store.isFilteredEmpty()) {
+          <div class="flex flex-col items-center px-4 py-12 text-center">
+            <h2 class="text-sm font-medium text-content-primary">Nenhum resultado para estes filtros</h2>
+            <p class="mt-1 text-sm text-content-muted">Ajuste a busca ou limpe os filtros para ver todos os parceiros.</p>
+            <button type="button" class="ui-btn mt-4" (click)="store.clearFilters()">Limpar filtros</button>
+          </div>
+        } @else {
+          <div class="hidden overflow-x-auto lg:block">
+            <table class="ui-table">
+              <caption class="sr-only">Lista de parceiros com categoria, UF, status, crédito e ações</caption>
               <thead>
-                <tr class="border-b border-border-subtle text-content-muted uppercase font-semibold tracking-wider">
-                  <th class="py-3 px-4">CNPJ</th>
-                  <th class="py-3 px-4">Razão Social</th>
-                  <th class="py-3 px-4">UF</th>
-                  <th class="py-3 px-4">Categoria</th>
-                  <th class="py-3 px-4">Crédito Utilizado / Limite</th>
-                  <th class="py-3 px-4 text-center">Homologação</th>
+                <tr>
+                  <th scope="col">Parceiro</th>
+                  <th scope="col">Categoria</th>
+                  <th scope="col">UF</th>
+                  <th scope="col">Status</th>
+                  <th scope="col" class="text-right">Limite</th>
+                  <th scope="col" class="text-right">Utilizado</th>
+                  <th scope="col" class="hidden xl:table-cell">Atualizado</th>
+                  <th scope="col" class="w-28 text-right">Ações</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-border-subtle text-content-primary">
-                @if (filteredPartners().length === 0) {
+              <tbody>
+                @for (partner of store.filteredItems(); track partner.id) {
                   <tr>
-                    <td colspan="6" class="py-16 text-center text-content-muted">
-                      Nenhum parceiro encontrado. Clique em "Cadastrar Parceiro" para adicionar.
+                    <td class="max-w-[260px]">
+                      <span class="block truncate text-sm font-medium text-content-primary" [title]="partner.companyName">{{ partner.companyName }}</span>
+                      <span class="block font-mono text-[11px] text-content-muted">{{ partner.cnpj }}</span>
                     </td>
-                  </tr>
-                }
-                @for (partner of filteredPartners(); track partner.id) {
-                  <tr class="hover:bg-canvas-elevated transition-colors">
-                    <td class="py-3 px-4 font-mono text-brand-secondary font-medium">{{ partner.cnpj }}</td>
-                    <td class="py-3 px-4 font-medium text-content-primary">{{ partner.companyName }}</td>
-                    <td class="py-3 px-4 text-content-muted font-mono">{{ partner.state }}</td>
-                    <td class="py-3 px-4 text-content-muted">{{ partner.category }}</td>
-
-                    <!-- Credit Limit Progress Bar -->
-                    <td class="py-3 px-4">
-                      <div class="space-y-1.5 min-w-40">
-                        <div class="flex items-center justify-between text-[10px] font-mono">
-                          <span class="text-content-muted">
-                            R$ {{ partner.creditUsed | number:'1.0-0':'pt-BR' }}
-                          </span>
-                          <span
-                            class="font-semibold"
-                            [class.text-state-danger]="creditPercent(partner) >= 90"
-                            [class.text-state-warning]="creditPercent(partner) >= 70 && creditPercent(partner) < 90"
-                            [class.text-state-success]="creditPercent(partner) < 70"
-                          >
-                            {{ creditPercent(partner) }}%
-                          </span>
+                    <td class="whitespace-nowrap text-sm text-content-muted">{{ categoryLabels[partner.category] }}</td>
+                    <td class="font-mono text-xs text-content-muted">{{ partner.state }}</td>
+                    <td>
+                      <app-badge [variant]="statusVariant(partner.status)" [label]="statusLabels[partner.status]" />
+                    </td>
+                    <td class="whitespace-nowrap text-right font-mono text-xs tabular-nums text-content-primary">{{ formatBrl(partner.creditLimit) }}</td>
+                    <td class="min-w-[150px]">
+                      <div class="flex items-center gap-2">
+                        <div class="h-1 w-14 overflow-hidden rounded-full bg-canvas-elevated" aria-hidden="true">
+                          <span class="block h-full rounded-full" [class]="creditBarClass(partner)" [style.width.%]="creditPct(partner)"></span>
                         </div>
-                        <div
-                          class="w-full h-1.5 rounded-full bg-canvas-base overflow-hidden"
-                          role="progressbar"
-                          [attr.aria-valuenow]="creditPercent(partner)"
-                          aria-valuemin="0"
-                          aria-valuemax="100"
-                          [attr.aria-label]="'Crédito utilizado: ' + creditPercent(partner) + '% do limite de R$ ' + partner.creditLimit"
-                        >
-                          <div
-                            class="h-full rounded-full transition-all duration-500"
-                            [style.width]="creditPercent(partner) + '%'"
-                            [class.bg-state-success]="creditPercent(partner) < 70"
-                            [class.bg-state-warning]="creditPercent(partner) >= 70 && creditPercent(partner) < 90"
-                            [class.bg-state-danger]="creditPercent(partner) >= 90"
-                          ></div>
-                        </div>
-                        <div class="text-[10px] text-content-disabled font-mono">
-                          Limite: R$ {{ partner.creditLimit | number:'1.0-0':'pt-BR' }}
-                        </div>
+                        <span class="font-mono text-[11px] tabular-nums text-content-muted">{{ formatBrl(partner.creditUsed) }}</span>
                       </div>
                     </td>
-
-                    <td class="py-3 px-4 text-center">
-                      @switch (partner.status) {
-                        @case ('HOMOLOGADO') {
-                          <app-badge variant="SUCCESS" label="HOMOLOGADO" />
-                        }
-                        @case ('EM_ANALISE') {
-                          <app-badge variant="WARNING" label="EM ANÁLISE" />
-                        }
-                        @case ('BLOQUEADO') {
-                          <app-badge variant="DANGER" label="BLOQUEADO" />
-                        }
-                      }
+                    <td class="hidden whitespace-nowrap font-mono text-[11px] text-content-muted xl:table-cell">{{ formatDate(partner.updatedAt) }}</td>
+                    <td>
+                      <div class="flex justify-end gap-0.5">
+                        <button type="button" class="ui-icon-btn h-8 w-8" [attr.aria-label]="'Editar ' + partner.companyName" title="Editar" (click)="openEdit(partner)">
+                          <lucide-icon [img]="Edit2" [size]="15" />
+                        </button>
+                        <button type="button" class="ui-icon-btn h-8 w-8" [attr.aria-label]="'Alterar homologação de ' + partner.companyName" title="Alterar homologação" (click)="openStatus(partner)">
+                          <lucide-icon [img]="ShieldCheck" [size]="15" />
+                        </button>
+                        <button type="button" class="ui-icon-btn h-8 w-8 hover:text-state-danger" [attr.aria-label]="'Excluir ' + partner.companyName" title="Excluir" (click)="deleteTarget.set(partner)">
+                          <lucide-icon [img]="Trash2" [size]="15" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 }
               </tbody>
             </table>
           </div>
+
+          <ul class="divide-y divide-border-subtle lg:hidden" aria-label="Lista de parceiros">
+            @for (partner of store.filteredItems(); track partner.id) {
+              <li class="p-4">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <p class="truncate text-sm font-medium text-content-primary" [title]="partner.companyName">{{ partner.companyName }}</p>
+                    <p class="mt-0.5 font-mono text-[11px] text-content-muted">{{ partner.cnpj }}</p>
+                  </div>
+                  <app-badge [variant]="statusVariant(partner.status)" [label]="statusLabels[partner.status]" />
+                </div>
+
+                <div class="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                  <div>
+                    <p class="text-content-muted">Categoria</p>
+                    <p class="mt-0.5 text-content-primary">{{ categoryLabels[partner.category] }} · {{ partner.state }}</p>
+                  </div>
+                  <div>
+                    <p class="text-content-muted">Crédito utilizado</p>
+                    <p class="mt-0.5 font-mono tabular-nums text-content-primary">{{ formatBrl(partner.creditUsed) }}</p>
+                  </div>
+                  <div>
+                    <p class="text-content-muted">Limite</p>
+                    <p class="mt-0.5 font-mono tabular-nums text-content-primary">{{ formatBrl(partner.creditLimit) }}</p>
+                  </div>
+                  <div>
+                    <p class="text-content-muted">Atualizado</p>
+                    <p class="mt-0.5 font-mono text-content-primary">{{ formatDate(partner.updatedAt) }}</p>
+                  </div>
+                </div>
+
+                <div class="mt-3 flex items-center gap-1 border-t border-border-subtle pt-2">
+                  <button type="button" class="ui-btn h-8 border-transparent px-2 text-xs" (click)="openEdit(partner)">
+                    <lucide-icon [img]="Edit2" [size]="14" /> Editar
+                  </button>
+                  <button type="button" class="ui-btn h-8 border-transparent px-2 text-xs" (click)="openStatus(partner)">
+                    <lucide-icon [img]="ShieldCheck" [size]="14" /> Homologação
+                  </button>
+                  <button type="button" class="ui-btn ml-auto h-8 border-transparent px-2 text-xs text-state-danger" (click)="deleteTarget.set(partner)">
+                    <lucide-icon [img]="Trash2" [size]="14" /> Excluir
+                  </button>
+                </div>
+              </li>
+            }
+          </ul>
         }
       </div>
+    </section>
 
-      <!-- Partner Registration Modal -->
-      @if (isModalOpen()) {
-        <div
-          class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm"
-          (click)="onBackdropClick($event)"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="partner-modal-title"
-        >
-          <div
-            class="relative w-full max-w-lg p-6 bg-canvas-elevated border border-border-strong rounded-xl shadow-2xl space-y-5 text-content-primary"
-            (click)="$event.stopPropagation()"
-          >
-            <!-- Modal Header -->
-            <div class="flex items-center justify-between pb-4 border-b border-border-subtle">
-              <h2 id="partner-modal-title" class="text-base font-bold text-content-primary tracking-tight">
-                Cadastrar Novo Parceiro B2B
-              </h2>
-              <button
-                type="button"
-                (click)="closeModal()"
-                class="p-1.5 rounded-lg text-content-muted hover:text-content-primary hover:bg-canvas-surface transition-colors"
-                aria-label="Fechar janela"
-              >
-                <lucide-icon [img]="XIcon" [size]="18" />
-              </button>
-            </div>
+    <app-partner-form-modal
+      [open]="formOpen()"
+      [partner]="formPartner()"
+      (closed)="closeForm()"
+      (saved)="handleSaved($event)"
+    />
 
-            <!-- Form -->
-            <form [formGroup]="partnerForm" (ngSubmit)="onPartnerSubmit()" class="space-y-4" novalidate>
-              <!-- CNPJ with mask + validation -->
-              <div>
-                <label for="cnpj" class="block text-xs font-semibold text-content-muted uppercase tracking-wider mb-1">
-                  CNPJ *
-                </label>
-                <input
-                  id="cnpj"
-                  type="text"
-                  formControlName="cnpj"
-                  appCnpjMask
-                  placeholder="00.000.000/0000-00"
-                  maxlength="18"
-                  class="w-full px-3 py-2 rounded-lg bg-canvas-base border border-border-strong text-xs text-content-primary focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand font-mono transition-colors"
-                  [attr.aria-invalid]="partnerForm.get('cnpj')?.touched && partnerForm.get('cnpj')?.invalid ? 'true' : null"
-                  aria-describedby="cnpj-error"
-                />
-                @if (partnerForm.get('cnpj')?.touched && partnerForm.get('cnpj')?.invalid) {
-                  <span id="cnpj-error" class="text-[11px] text-state-danger mt-1 block" role="alert">
-                    @if (partnerForm.get('cnpj')?.errors?.['required']) {
-                      CNPJ é obrigatório.
-                    } @else if (partnerForm.get('cnpj')?.errors?.['cnpjInvalid']) {
-                      CNPJ inválido — verifique os dígitos verificadores.
-                    }
-                  </span>
-                }
-                @if (partnerForm.get('cnpj')?.valid && partnerForm.get('cnpj')?.dirty) {
-                  <span class="text-[11px] text-state-success mt-1 flex items-center gap-1">
-                    <lucide-icon [img]="ShieldCheckIcon" [size]="12" />
-                    CNPJ válido (Módulo 11 verificado)
-                  </span>
-                }
-              </div>
+    <app-partner-status-modal
+      [open]="statusOpen()"
+      [partner]="statusPartner()"
+      (closed)="closeStatus()"
+      (changed)="handleStatusChanged($event)"
+    />
 
-              <!-- Company Name -->
-              <div>
-                <label for="companyName" class="block text-xs font-semibold text-content-muted uppercase tracking-wider mb-1">
-                  Razão Social *
-                </label>
-                <input
-                  id="companyName"
-                  type="text"
-                  formControlName="companyName"
-                  placeholder="Ex: Distribuidora ABC Ltda"
-                  class="w-full px-3 py-2 rounded-lg bg-canvas-base border border-border-strong text-xs text-content-primary focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors"
-                />
-              </div>
-
-              <div class="grid grid-cols-2 gap-4">
-                <!-- Category -->
-                <div>
-                  <label for="category" class="block text-xs font-semibold text-content-muted uppercase tracking-wider mb-1">
-                    Categoria *
-                  </label>
-                  <select
-                    id="category"
-                    formControlName="category"
-                    class="w-full px-3 py-2 rounded-lg bg-canvas-base border border-border-strong text-xs text-content-primary focus:outline-none focus:border-brand transition-colors"
-                  >
-                    <option value="FORNECEDOR">Fornecedor</option>
-                    <option value="CLIENTE_DIRETO">Cliente Direto</option>
-                    <option value="DISTRIBUIDOR">Distribuidor</option>
-                  </select>
-                </div>
-
-                <!-- State -->
-                <div>
-                  <label for="state" class="block text-xs font-semibold text-content-muted uppercase tracking-wider mb-1">
-                    UF *
-                  </label>
-                  <input
-                    id="state"
-                    type="text"
-                    formControlName="state"
-                    placeholder="SP"
-                    maxlength="2"
-                    class="w-full px-3 py-2 rounded-lg bg-canvas-base border border-border-strong text-xs text-content-primary focus:outline-none focus:border-brand transition-colors font-mono uppercase"
-                  />
-                </div>
-              </div>
-
-              <!-- Credit Limit -->
-              <div>
-                <label for="creditLimit" class="block text-xs font-semibold text-content-muted uppercase tracking-wider mb-1">
-                  Limite de Crédito (R$) *
-                </label>
-                <input
-                  id="creditLimit"
-                  type="number"
-                  min="0"
-                  formControlName="creditLimit"
-                  placeholder="Ex: 100000"
-                  class="w-full px-3 py-2 rounded-lg bg-canvas-base border border-border-strong text-xs text-content-primary focus:outline-none focus:border-brand transition-colors font-mono"
-                />
-              </div>
-
-              <!-- Actions -->
-              <div class="flex items-center justify-end gap-3 pt-4 border-t border-border-subtle">
-                <button
-                  type="button"
-                  (click)="closeModal()"
-                  class="px-4 py-2 rounded-lg text-xs font-medium text-content-muted hover:text-content-primary hover:bg-canvas-surface transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  [disabled]="partnerForm.invalid || submitting()"
-                  class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium text-xs shadow-brand-glow transition-colors"
-                >
-                  <lucide-icon [img]="SaveIcon" [size]="16" />
-                  {{ submitting() ? 'Salvando…' : 'Cadastrar Parceiro' }}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      }
-    </div>
+    <app-confirm-dialog
+      [open]="deleteTarget() !== null"
+      title="Excluir parceiro"
+      [message]="deleteTarget() ? 'Excluir ' + deleteTarget()?.companyName + '? O cadastro será removido. Parceiros com crédito utilizado ou transações vinculadas não podem ser excluídos.' : ''"
+      confirmLabel="Excluir parceiro"
+      tone="danger"
+      [busy]="deleteBusy()"
+      (cancelled)="deleteTarget.set(null)"
+      (confirmed)="confirmDelete()"
+    />
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PartnersComponent implements OnInit {
-  private readonly fb = inject(FormBuilder);
-  private readonly http = inject(HttpClient);
-  private readonly toastService = inject(ToastService);
+  protected readonly store = inject(PartnersStore);
   private readonly route = inject(ActivatedRoute);
-  private readonly destroyRef = inject(DestroyRef);
+  private readonly toast = inject(ToastService);
 
-  protected readonly PlusIcon = Plus;
-  protected readonly UsersIcon = Users;
-  protected readonly Building2Icon = Building2;
-  protected readonly CheckCircle2Icon = CheckCircle2;
-  protected readonly SearchIcon = Search;
-  protected readonly XIcon = X;
-  protected readonly SaveIcon = Save;
-  protected readonly ShieldCheckIcon = ShieldCheck;
-  protected readonly CreditCardIcon = CreditCard;
-  protected readonly RefreshCwIcon = RefreshCw;
+  protected readonly categories = PARTNER_CATEGORIES;
+  protected readonly categoryLabels = PARTNER_CATEGORY_LABELS;
+  protected readonly statusLabels = PARTNER_STATUS_LABELS;
+  protected readonly statuses: readonly PartnerStatus[] = ['EM_ANALISE', 'HOMOLOGADO', 'BLOQUEADO'];
+  protected readonly formatBrl = formatBrl;
 
-  protected readonly searchQuery = signal('');
-  protected readonly partners = signal<readonly B2BPartner[]>([]);
-  protected readonly isModalOpen = signal(false);
-  protected readonly loading = signal(false);
-  protected readonly submitting = signal(false);
-  protected readonly error = signal<string | null>(null);
+  protected readonly Search = Search;
+  protected readonly AlertCircle = AlertCircle;
+  protected readonly RefreshCw = RefreshCw;
+  protected readonly Users = Users;
+  protected readonly Plus = Plus;
+  protected readonly Edit2 = Edit2;
+  protected readonly ShieldCheck = ShieldCheck;
+  protected readonly Trash2 = Trash2;
 
-  protected readonly filteredPartners = computed<readonly B2BPartner[]>(() => {
-    const q = this.searchQuery().toLowerCase();
-    if (!q) return this.partners();
-    return this.partners().filter(
-      (p) =>
-        p.companyName.toLowerCase().includes(q) ||
-        p.cnpj.toLowerCase().includes(q)
+  protected readonly formOpen = signal(false);
+  protected readonly formPartner = signal<B2BPartner | null>(null);
+  protected readonly statusOpen = signal(false);
+  protected readonly statusPartner = signal<B2BPartner | null>(null);
+  protected readonly deleteTarget = signal<B2BPartner | null>(null);
+  protected readonly deleteBusy = signal(false);
+
+  protected readonly lastUpdatedLabel = computed(() => {
+    const dates = this.store
+      .items()
+      .map((partner) => new Date(partner.updatedAt ?? partner.createdAt ?? 0).getTime())
+      .filter((value) => Number.isFinite(value) && value > 0);
+    if (dates.length === 0) return 'agora';
+    return DATE_FORMATTER.format(new Date(Math.max(...dates)));
+  });
+
+  ngOnInit(): void {
+    const status = this.route.snapshot.queryParamMap.get('status');
+    if (status === 'EM_ANALISE' || status === 'HOMOLOGADO' || status === 'BLOQUEADO') {
+      this.store.setFilters({ status });
+    }
+    void this.store.load();
+  }
+
+  protected onSearch(event: Event): void {
+    this.store.setFilters({ search: (event.target as HTMLInputElement).value });
+  }
+
+  protected onCategory(event: Event): void {
+    this.store.setFilters({ category: (event.target as HTMLSelectElement).value as PartnerCategory | 'ALL' });
+  }
+
+  protected onStatus(event: Event): void {
+    this.store.setFilters({ status: (event.target as HTMLSelectElement).value as PartnerStatus | 'ALL' });
+  }
+
+  protected onState(event: Event): void {
+    this.store.setFilters({ state: (event.target as HTMLSelectElement).value });
+  }
+
+  protected openCreate(): void {
+    this.formPartner.set(null);
+    this.formOpen.set(true);
+  }
+
+  protected openEdit(partner: B2BPartner): void {
+    this.formPartner.set(partner);
+    this.formOpen.set(true);
+  }
+
+  protected closeForm(): void {
+    this.formOpen.set(false);
+    this.formPartner.set(null);
+  }
+
+  protected handleSaved(partner: B2BPartner): void {
+    const editing = this.formPartner() !== null;
+    this.closeForm();
+    this.toast.success(
+      editing ? 'Parceiro atualizado' : 'Parceiro cadastrado',
+      partner.companyName
     );
-  });
+  }
 
-  protected readonly totalCreditLimit = computed<number>(() =>
-    this.partners().reduce((sum, p) => sum + p.creditLimit, 0)
-  );
+  protected openStatus(partner: B2BPartner): void {
+    this.statusPartner.set(partner);
+    this.statusOpen.set(true);
+  }
 
-  protected readonly homologadosPercentage = computed<number>(() => {
-    const total = this.partners().length;
-    if (total === 0) return 0;
-    const homologados = this.partners().filter((p) => p.status === 'HOMOLOGADO').length;
-    return Math.round((homologados / total) * 100);
-  });
+  protected closeStatus(): void {
+    this.statusOpen.set(false);
+    this.statusPartner.set(null);
+  }
 
-  protected partnerForm: FormGroup = this.fb.group({
-    cnpj: ['', [Validators.required, cnpjValidator]],
-    companyName: ['', [Validators.required, Validators.minLength(3)]],
-    category: ['FORNECEDOR', [Validators.required]],
-    state: ['', [Validators.required, Validators.minLength(2), Validators.maxLength(2)]],
-    creditLimit: [0, [Validators.required, Validators.min(0)]],
-  });
+  protected handleStatusChanged(partner: B2BPartner): void {
+    this.closeStatus();
+    this.toast.success('Homologação atualizada', `${partner.companyName} · ${this.statusLabels[partner.status]}`);
+  }
 
-  /** Returns the credit utilization percentage capped at 100 */
-  protected creditPercent(partner: B2BPartner): number {
-    if (partner.creditLimit === 0) return 0;
+  protected async confirmDelete(): Promise<void> {
+    const partner = this.deleteTarget();
+    if (!partner) return;
+    this.deleteBusy.set(true);
+    try {
+      await this.store.remove(partner.id);
+      this.deleteTarget.set(null);
+      this.toast.success('Parceiro excluído', partner.companyName);
+    } catch {
+      this.toast.error('Não foi possível excluir', this.store.error() ?? 'Tente novamente.');
+      this.deleteTarget.set(null);
+    } finally {
+      this.deleteBusy.set(false);
+    }
+  }
+
+  protected statusVariant(status: PartnerStatus): BadgeVariant {
+    if (status === 'HOMOLOGADO') return 'SUCCESS';
+    if (status === 'BLOQUEADO') return 'DANGER';
+    return 'WARNING';
+  }
+
+  protected creditPct(partner: B2BPartner): number {
+    if (partner.creditLimit <= 0) return 0;
     return Math.min(100, Math.round((partner.creditUsed / partner.creditLimit) * 100));
   }
 
-  ngOnInit(): void {
-    this.loadPartners();
-
-    // Open modal automatically if ?action=new query param is present
-    this.route.queryParams
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((params) => {
-        if (params['action'] === 'new') {
-          this.openModal();
-        }
-      });
+  protected creditBarClass(partner: B2BPartner): string {
+    const pct = this.creditPct(partner);
+    if (pct >= 80) return 'bg-state-danger';
+    if (pct >= 60) return 'bg-state-warning';
+    return 'bg-brand';
   }
 
-  protected async loadPartners(): Promise<void> {
-    this.loading.set(true);
-    this.error.set(null);
-    try {
-      const list = await firstValueFrom(
-        this.http.get<readonly B2BPartner[]>(PARTNERS_API)
-      );
-      if (list.length === 0) {
-        // Seed initial partners on first load
-        await this.seedInitialPartners();
-        const seeded = await firstValueFrom(
-          this.http.get<readonly B2BPartner[]>(PARTNERS_API)
-        );
-        this.partners.set(seeded);
-      } else {
-        this.partners.set(list);
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Erro ao carregar parceiros.';
-      this.error.set(msg);
-    } finally {
-      this.loading.set(false);
+  protected formatPct(value: number): string {
+    return `${value.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}%`;
+  }
+
+  protected formatCompact(value: number): string {
+    if (value >= 1_000_000) {
+      return `R$ ${(value / 1_000_000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mi`;
     }
-  }
-
-  private async seedInitialPartners(): Promise<void> {
-    for (const p of SEED_PARTNERS) {
-      try {
-        await firstValueFrom(this.http.post<B2BPartner>(PARTNERS_API, p));
-      } catch {
-        // Best-effort seed — ignore duplicates
-      }
+    if (value >= 1_000) {
+      return `R$ ${(value / 1_000).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} mil`;
     }
+    return formatBrl(value);
   }
 
-  protected openModal(): void {
-    this.partnerForm.reset({
-      cnpj: '',
-      companyName: '',
-      category: 'FORNECEDOR',
-      state: '',
-      creditLimit: 0,
-    });
-    this.isModalOpen.set(true);
-  }
-
-  protected closeModal(): void {
-    this.isModalOpen.set(false);
-  }
-
-  protected onBackdropClick(event: MouseEvent): void {
-    if (event.target === event.currentTarget) this.closeModal();
-  }
-
-  protected async onPartnerSubmit(): Promise<void> {
-    if (this.partnerForm.invalid) {
-      this.partnerForm.markAllAsTouched();
-      return;
-    }
-
-    const value = this.partnerForm.value as {
-      cnpj: string;
-      companyName: string;
-      category: 'FORNECEDOR' | 'CLIENTE_DIRETO' | 'DISTRIBUIDOR';
-      state: string;
-      creditLimit: number;
-    };
-
-    const payload: Omit<B2BPartner, 'id'> = {
-      cnpj: value.cnpj,
-      companyName: value.companyName,
-      category: value.category,
-      status: 'EM_ANALISE',
-      creditLimit: Number(value.creditLimit),
-      creditUsed: 0,
-      state: value.state.toUpperCase(),
-    };
-
-    this.submitting.set(true);
-    try {
-      const created = await firstValueFrom(
-        this.http.post<B2BPartner>(PARTNERS_API, payload)
-      );
-      // Optimistically prepend new partner to the top of the list
-      this.partners.update((current) => [created, ...current]);
-      this.closeModal();
-      this.toastService.success(
-        'Parceiro Cadastrado',
-        `${value.companyName} foi adicionado em análise de homologação.`
-      );
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Erro ao cadastrar parceiro.';
-      this.toastService.error('Erro', msg);
-    } finally {
-      this.submitting.set(false);
-    }
+  protected formatDate(value: string | undefined): string {
+    if (!value) return '—';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? '—' : DATE_FORMATTER.format(date);
   }
 }

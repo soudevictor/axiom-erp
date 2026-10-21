@@ -1,41 +1,40 @@
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpErrorResponse } from '@angular/common/http';
 import { computed, inject } from '@angular/core';
 import {
+  patchState,
   signalStore,
   withComputed,
   withHooks,
   withMethods,
   withState,
-  patchState,
 } from '@ngrx/signals';
-import { firstValueFrom } from 'rxjs';
+import { InventoryApi } from '@/core/api/inventory.api';
 import {
   DEFAULT_INVENTORY_FILTER,
+  deriveInventoryStatus,
+  type CreateInventoryItem,
   type InventoryFilter,
   type InventoryItem,
+  type InventorySummary,
+  type UpdateInventoryItem,
 } from '@/core/models/inventory.model';
-import type { PaginatedResponse } from '@/core/models/pagination.model';
-
-const API_URL = '/api/v1/inventory';
+import type {
+  StockMovementInput,
+  StockMovementResult,
+} from '@/core/models/stock-movement.model';
 
 interface InventoryState {
   items: readonly InventoryItem[];
   totalItems: number;
   loading: boolean;
-  /** True while loadMoreItems() is fetching the next page */
   loadingMore: boolean;
+  saving: boolean;
   error: string | null;
   filters: InventoryFilter;
-  summaryStats: {
-    lowStockCount: number;
-    totalStockValue: number;
-  } | null;
-  /** IDs currently selected for bulk actions */
+  summary: InventorySummary | null;
+  summaryLoading: boolean;
   selectedIds: readonly string[];
-  /** Whether more pages are available for infinite scroll */
-  hasMoreItems: boolean;
-  /** Current infinite-scroll page cursor (separate from filters.page) */
-  infinitePage: number;
+  hasMore: boolean;
 }
 
 const initialState: InventoryState = {
@@ -43,32 +42,39 @@ const initialState: InventoryState = {
   totalItems: 0,
   loading: false,
   loadingMore: false,
+  saving: false,
   error: null,
   filters: DEFAULT_INVENTORY_FILTER,
-  summaryStats: null,
+  summary: null,
+  summaryLoading: false,
   selectedIds: [],
-  hasMoreItems: true,
-  infinitePage: 1,
+  hasMore: true,
 };
 
-function buildHttpParams(filters: InventoryFilter): HttpParams {
-  let params = new HttpParams()
-    .set('page', filters.page.toString())
-    .set('limit', filters.limit.toString())
-    .set('sortBy', filters.sortBy)
-    .set('sortOrder', filters.sortOrder);
+function messageFrom(error: unknown, fallback: string): string {
+  if (error instanceof HttpErrorResponse) {
+    const body = error.error as { message?: string } | null;
+    return body?.message ?? fallback;
+  }
+  return error instanceof Error ? error.message : fallback;
+}
 
-  if (filters.search) {
-    params = params.set('search', filters.search);
-  }
-  if (filters.category) {
-    params = params.set('category', filters.category);
-  }
-  if (filters.status) {
-    params = params.set('status', filters.status);
-  }
-
-  return params;
+function sortItems(
+  items: readonly InventoryItem[],
+  sortBy: keyof InventoryItem,
+  sortOrder: 'asc' | 'desc'
+): InventoryItem[] {
+  return [...items].sort((a, b) => {
+    const aValue = a[sortBy];
+    const bValue = b[sortBy];
+    const comparison =
+      aValue instanceof Date && bValue instanceof Date
+        ? aValue.getTime() - bValue.getTime()
+        : typeof aValue === 'number' && typeof bValue === 'number'
+          ? aValue - bValue
+          : String(aValue ?? '').localeCompare(String(bValue ?? ''), 'pt-BR');
+    return sortOrder === 'desc' ? -comparison : comparison;
+  });
 }
 
 export const InventoryStore = signalStore(
@@ -77,266 +83,354 @@ export const InventoryStore = signalStore(
   withState(initialState),
 
   withComputed((store) => ({
-    lowStockCount: computed(() => {
-      const summary = store.summaryStats();
-      if (summary !== null) {
-        return summary.lowStockCount;
-      }
-      return store
-        .items()
-        .filter(
-          (item) =>
-            item.status === 'LOW_STOCK' || item.quantity <= item.minThreshold
-        ).length;
-    }),
-
-    totalStockValue: computed(() => {
-      const summary = store.summaryStats();
-      if (summary !== null) {
-        return summary.totalStockValue;
-      }
-      return store
-        .items()
-        .reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
-    }),
-
     hasActiveFilters: computed(() => {
       const filters = store.filters();
       return (
         filters.search !== '' ||
         filters.category !== null ||
-        filters.status !== null
+        filters.status !== null ||
+        filters.warehouseId !== null
       );
     }),
 
-    /** Whether ALL visible items are selected */
+    activeFilterCount: computed(() => {
+      const filters = store.filters();
+      return [filters.search !== '', filters.category !== null, filters.status !== null, filters.warehouseId !== null].filter(
+        Boolean
+      ).length;
+    }),
+
+    isEmpty: computed(() => !store.loading() && store.totalItems() === 0),
+    isFilteredEmpty: computed(
+      () => {
+        const filters = store.filters();
+        const hasFilters =
+          filters.search !== '' ||
+          filters.category !== null ||
+          filters.status !== null ||
+          filters.warehouseId !== null;
+        return !store.loading() && store.totalItems() === 0 && hasFilters;
+      }
+    ),
+
+    lowStockCount: computed(() => store.summary()?.lowStockCount ?? 0),
+    totalStockValue: computed(() => store.summary()?.totalStockValue ?? 0),
+    totalUnits: computed(() => store.summary()?.totalUnits ?? 0),
+    outOfStockCount: computed(() => store.summary()?.outOfStockCount ?? 0),
+    movementsLast30Days: computed(() => store.summary()?.movementsLast30Days ?? 0),
+    lastMovementAt: computed(() => store.summary()?.lastMovementAt ?? null),
+
     isAllSelected: computed(() => {
       const items = store.items();
       const selected = store.selectedIds();
-      return items.length > 0 && items.every((i) => selected.includes(i.id));
+      return items.length > 0 && items.every((item) => selected.includes(item.id));
     }),
 
-    /** Number of currently selected items */
     selectionCount: computed(() => store.selectedIds().length),
+    hasMoreItems: computed(() => store.hasMore()),
+    selectedItems: computed(() => {
+      const selected = new Set(store.selectedIds());
+      return store.items().filter((item) => selected.has(item.id));
+    }),
   })),
 
   withMethods((store) => {
-    const http = inject(HttpClient);
+    const api = inject(InventoryApi);
+    let listRequestId = 0;
+    let summaryRequestId = 0;
+
+    const upsertSummaryItem = (item: InventoryItem): void => {
+      patchState(store, {
+        items: store.items().map((candidate) => (candidate.id === item.id ? item : candidate)),
+      });
+    };
 
     return {
       async loadItems(): Promise<void> {
-        patchState(store, { loading: true, error: null, infinitePage: 1 });
-
+        const requestId = ++listRequestId;
+        patchState(store, { loading: true, loadingMore: false, error: null });
         try {
-          const params = buildHttpParams(store.filters());
-          const response = await firstValueFrom(
-            http.get<PaginatedResponse<InventoryItem>>(API_URL, { params })
-          );
-
-          const summaryStats = response.summary
-            ? {
-                lowStockCount: response.summary['lowStockCount'] ?? 0,
-                totalStockValue: response.summary['totalStockValue'] ?? 0,
-              }
-            : null;
-
+          const response = await api.list({ ...store.filters(), page: 1 });
+          if (requestId !== listRequestId) return;
           patchState(store, {
             items: response.data,
             totalItems: response.totalItems,
             loading: false,
-            summaryStats,
             selectedIds: [],
-            hasMoreItems: response.hasNextPage,
-            infinitePage: 1,
+            hasMore: response.hasNextPage,
+            filters: { ...store.filters(), page: 1 },
           });
-        } catch (err: unknown) {
-          const message =
-            err instanceof Error ? err.message : 'Erro ao carregar itens do estoque.';
-          patchState(store, { error: message, loading: false });
+        } catch (error: unknown) {
+          if (requestId !== listRequestId) return;
+          patchState(store, {
+            error: messageFrom(error, 'Erro ao carregar itens do estoque.'),
+            loading: false,
+          });
         }
       },
 
-      /** Appends the next page of items to the existing list (infinite scroll). */
       async loadMoreItems(): Promise<void> {
-        if (store.loadingMore() || !store.hasMoreItems()) return;
-
-        const nextPage = store.infinitePage() + 1;
-        patchState(store, { loadingMore: true });
-
+        if (store.loadingMore() || !store.hasMore()) return;
+        const requestId = ++listRequestId;
+        const nextPage = store.filters().page + 1;
+        patchState(store, { loadingMore: true, error: null });
         try {
-          const params = buildHttpParams({ ...store.filters(), page: nextPage });
-          const response = await firstValueFrom(
-            http.get<PaginatedResponse<InventoryItem>>(API_URL, { params })
-          );
-
+          const response = await api.list({ ...store.filters(), page: nextPage });
+          if (requestId !== listRequestId) return;
           patchState(store, {
             items: [...store.items(), ...response.data],
             totalItems: response.totalItems,
+            filters: { ...store.filters(), page: nextPage },
             loadingMore: false,
-            hasMoreItems: response.hasNextPage,
-            infinitePage: nextPage,
+            hasMore: response.hasNextPage,
           });
-        } catch (err: unknown) {
-          const message =
-            err instanceof Error ? err.message : 'Erro ao carregar mais itens.';
-          patchState(store, { error: message, loadingMore: false });
+        } catch (error: unknown) {
+          if (requestId !== listRequestId) return;
+          patchState(store, {
+            error: messageFrom(error, 'Erro ao carregar mais itens.'),
+            loadingMore: false,
+          });
         }
       },
 
-      async setFilters(partialFilters: Partial<InventoryFilter>): Promise<void> {
-        const safeFilters = partialFilters || {};
+      async loadSummary(): Promise<void> {
+        const requestId = ++summaryRequestId;
+        patchState(store, { summaryLoading: true });
+        try {
+          const summary = await api.summary();
+          if (requestId !== summaryRequestId) return;
+          patchState(store, { summary, summaryLoading: false });
+        } catch {
+          if (requestId !== summaryRequestId) return;
+          patchState(store, { summaryLoading: false });
+        }
+      },
+
+      async load(): Promise<void> {
+        await Promise.all([this.loadItems(), this.loadSummary()]);
+      },
+
+      async refresh(): Promise<void> {
+        await this.load();
+      },
+
+      async fetchAllFiltered(): Promise<InventoryItem[]> {
+        const response = await api.list({ ...store.filters(), page: 1, limit: 1000 });
+        return [...response.data];
+      },
+
+      async setFilters(partial: Partial<InventoryFilter>): Promise<void> {
         patchState(store, {
-          filters: { ...store.filters(), ...safeFilters, page: safeFilters.page ?? 1 },
-          hasMoreItems: true,
-          infinitePage: 1,
+          filters: { ...store.filters(), ...partial, page: 1 },
+          selectedIds: [],
+          hasMore: true,
         });
         await this.loadItems();
       },
 
-      async addItem(item: Omit<InventoryItem, 'id'>): Promise<void> {
-        patchState(store, { loading: true, error: null });
+      async resetFilters(): Promise<void> {
+        patchState(store, {
+          filters: DEFAULT_INVENTORY_FILTER,
+          selectedIds: [],
+          hasMore: true,
+        });
+        await this.loadItems();
+      },
 
+      async setSortBy(column: keyof InventoryItem): Promise<void> {
+        const current = store.filters();
+        const sortOrder =
+          current.sortBy === column && current.sortOrder === 'asc' ? 'desc' : 'asc';
+        patchState(store, {
+          filters: { ...current, sortBy: column, sortOrder, page: 1 },
+        });
+        await this.loadItems();
+      },
+
+      async addItem(input: CreateInventoryItem): Promise<InventoryItem> {
+        patchState(store, { saving: true, error: null });
         try {
-          await firstValueFrom(
-            http.post<InventoryItem>(API_URL, item)
-          );
-          await this.loadItems();
-        } catch (err: unknown) {
-          const message =
-            err instanceof Error ? err.message : 'Erro ao adicionar item.';
-          patchState(store, { error: message, loading: false });
+          const item = await api.create(input);
+          patchState(store, { saving: false });
+          await this.load();
+          return item;
+        } catch (error: unknown) {
+          patchState(store, {
+            saving: false,
+            error: messageFrom(error, 'Erro ao criar produto.'),
+          });
+          throw error;
         }
       },
 
-      async updateItem(
-        id: string,
-        changes: Partial<InventoryItem>
-      ): Promise<void> {
-        patchState(store, { loading: true, error: null });
-
+      async updateItem(id: string, input: UpdateInventoryItem): Promise<InventoryItem> {
+        patchState(store, { saving: true, error: null });
         try {
-          await firstValueFrom(
-            http.put<InventoryItem>(`${API_URL}/${id}`, changes)
-          );
-          await this.loadItems();
-        } catch (err: unknown) {
-          const message =
-            err instanceof Error ? err.message : 'Erro ao atualizar item.';
-          patchState(store, { error: message, loading: false });
+          const item = await api.update(id, input);
+          patchState(store, { saving: false });
+          upsertSummaryItem(item);
+          await this.loadSummary();
+          return item;
+        } catch (error: unknown) {
+          patchState(store, {
+            saving: false,
+            error: messageFrom(error, 'Erro ao atualizar produto.'),
+          });
+          throw error;
         }
       },
 
       /**
-       * Optimistic delete: removes the item from UI immediately,
-       * then performs the actual HTTP request.
-       * Returns the removed item so the caller can restore it on undo.
+       * Compatibility shim for the legacy component: removes immediately and
+       * delegates rollback to deleteItem(). New code should call deleteItem().
        */
       optimisticDeleteItem(id: string): InventoryItem | undefined {
-        const item = store.items().find((i) => i.id === id);
+        const item = store.items().find((candidate) => candidate.id === id);
         if (!item) return undefined;
-
-        // Immediately remove from the UI
-        patchState(store, {
-          items: store.items().filter((i) => i.id !== id),
-          totalItems: store.totalItems() - 1,
-          selectedIds: store.selectedIds().filter((sid) => sid !== id),
-        });
-
-        // Fire-and-forget the HTTP call; errors are logged to console
-        firstValueFrom(http.delete(`${API_URL}/${id}`)).catch((err: unknown) => {
-          console.error('Falha ao remover item na API:', err);
-        });
-
+        void this.deleteItem(id).catch(() => undefined);
         return item;
       },
 
-      /** Restores a previously deleted item (undo operation). */
-      restoreItem(item: InventoryItem): void {
-        patchState(store, {
-          items: [item, ...store.items()],
-          totalItems: store.totalItems() + 1,
-        });
-        // Re-add to the database via POST
-        firstValueFrom(http.post<InventoryItem>(API_URL, item)).catch((err: unknown) => {
-          console.error('Falha ao restaurar item na API:', err);
-        });
-      },
+      async deleteItem(id: string): Promise<InventoryItem> {
+        const item = store.items().find((candidate) => candidate.id === id);
+        if (!item) throw new Error('Produto não encontrado na lista.');
 
-      async deleteItem(id: string): Promise<void> {
-        patchState(store, { loading: true, error: null });
+        patchState(store, {
+          items: store.items().filter((candidate) => candidate.id !== id),
+          totalItems: Math.max(0, store.totalItems() - 1),
+          selectedIds: store.selectedIds().filter((selectedId) => selectedId !== id),
+        });
 
         try {
-          await firstValueFrom(
-            http.delete(`${API_URL}/${id}`)
-          );
-          await this.loadItems();
-        } catch (err: unknown) {
-          const message =
-            err instanceof Error ? err.message : 'Erro ao remover item.';
-          patchState(store, { error: message, loading: false });
+          await api.remove(id);
+          await this.loadSummary();
+          return item;
+        } catch (error: unknown) {
+          patchState(store, {
+            items: sortItems(
+              [...store.items(), item],
+              store.filters().sortBy,
+              store.filters().sortOrder
+            ),
+            totalItems: store.totalItems() + 1,
+            error: messageFrom(error, 'Não foi possível excluir o produto.'),
+          });
+          throw error;
         }
       },
 
-      /** Deletes all currently selected items (bulk delete). */
-      async bulkDeleteSelected(): Promise<void> {
-        const ids = [...store.selectedIds()];
-        if (ids.length === 0) return;
+      async restoreItem(item: InventoryItem): Promise<void> {
+        if (!store.items().some((candidate) => candidate.id === item.id)) {
+          patchState(store, {
+            items: sortItems(
+              [...store.items(), item],
+              store.filters().sortBy,
+              store.filters().sortOrder
+            ),
+            totalItems: store.totalItems() + 1,
+          });
+        }
+
+        try {
+          await api.restore(item);
+          await this.loadSummary();
+        } catch (error: unknown) {
+          patchState(store, {
+            items: store.items().filter((candidate) => candidate.id !== item.id),
+            totalItems: Math.max(0, store.totalItems() - 1),
+            error: messageFrom(error, 'Não foi possível desfazer a exclusão.'),
+          });
+          throw error;
+        }
+      },
+
+      async bulkDeleteSelected(): Promise<{ deleted: InventoryItem[]; failed: number }> {
+        const selected = new Set(store.selectedIds());
+        const candidates = store.items().filter((item) => selected.has(item.id));
+        if (candidates.length === 0) return { deleted: [], failed: 0 };
 
         patchState(store, {
-          items: store.items().filter((i) => !ids.includes(i.id)),
-          totalItems: store.totalItems() - ids.length,
+          items: store.items().filter((item) => !selected.has(item.id)),
+          totalItems: Math.max(0, store.totalItems() - candidates.length),
           selectedIds: [],
         });
 
-        await Promise.all(
-          ids.map((id) =>
-            firstValueFrom(http.delete(`${API_URL}/${id}`)).catch((err: unknown) => {
-              console.error(`Falha ao remover item ${id}:`, err);
-            })
-          )
+        const results = await Promise.allSettled(
+          candidates.map((item) => api.remove(item.id))
         );
+        const deleted = candidates.filter((_, index) => results[index].status === 'fulfilled');
+        const failed = candidates.length - deleted.length;
+
+        if (failed > 0) {
+          await this.load();
+          return { deleted, failed };
+        }
+
+        await this.loadSummary();
+        return { deleted, failed: 0 };
       },
 
-      resetFilters(): void {
-        patchState(store, { filters: DEFAULT_INVENTORY_FILTER });
+      async restoreMany(items: readonly InventoryItem[]): Promise<number> {
+        const results = await Promise.allSettled(items.map((item) => api.restore(item)));
+        const failed = results.filter((result) => result.status === 'rejected').length;
+        await this.load();
+        return failed;
       },
 
-      // ─── Sorting ──────────────────────────────────────────────
+      async recordMovement(
+        itemId: string,
+        input: StockMovementInput
+      ): Promise<StockMovementResult> {
+        patchState(store, { saving: true, error: null });
+        try {
+          const result = await api.addMovement(itemId, input);
+          patchState(store, { saving: false });
+          upsertSummaryItem(result.item);
+          await this.loadSummary();
+          return result;
+        } catch (error: unknown) {
+          patchState(store, {
+            saving: false,
+            error: messageFrom(error, 'Erro ao registrar movimentação.'),
+          });
+          throw error;
+        }
+      },
 
-      setSortBy(column: keyof InventoryItem): void {
-        const current = store.filters();
-        const newOrder =
-          current.sortBy === column && current.sortOrder === 'asc' ? 'desc' : 'asc';
+      toggleSelection(id: string): void {
+        const selected = store.selectedIds();
         patchState(store, {
-          filters: { ...current, sortBy: column, sortOrder: newOrder, page: 1 },
+          selectedIds: selected.includes(id)
+            ? selected.filter((candidate) => candidate !== id)
+            : [...selected, id],
         });
       },
 
-      // ─── Bulk Selection ────────────────────────────────────────
-
-      toggleSelect(id: string): void {
-        const current = store.selectedIds();
-        const updated = current.includes(id)
-          ? current.filter((sid) => sid !== id)
-          : [...current, id];
-        patchState(store, { selectedIds: updated });
+      selectAllLoaded(): void {
+        patchState(store, { selectedIds: store.items().map((item) => item.id) });
       },
 
       selectAll(): void {
-        const allIds = store.items().map((i) => i.id);
-        const isAllSelected = allIds.every((id) => store.selectedIds().includes(id));
-        patchState(store, { selectedIds: isAllSelected ? [] : allIds });
+        this.selectAllLoaded();
+      },
+
+      toggleSelect(id: string): void {
+        this.toggleSelection(id);
       },
 
       clearSelection(): void {
         patchState(store, { selectedIds: [] });
+      },
+
+      derivedStatus(item: Pick<InventoryItem, 'quantity' | 'minThreshold'>): InventoryItem['status'] {
+        return deriveInventoryStatus(item.quantity, item.minThreshold);
       },
     };
   }),
 
   withHooks({
     onInit(store) {
-      store.loadItems();
+      void store.load();
     },
   })
 );

@@ -1,4 +1,3 @@
-import { CommonModule } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -11,399 +10,299 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink } from '@angular/router';
+import { filter } from 'rxjs/operators';
 import {
-  Bell,
+  AlertTriangle,
   ChevronRight,
   Database,
+  Ellipsis,
   LucideAngularModule,
-  Search,
-  Zap,
-  AlertTriangle,
-  RefreshCw,
-  RotateCcw,
-  ChevronDown,
-  Command,
-  Sun,
+  Menu,
   Moon,
+  RotateCcw,
+  Search,
+  Sun,
+  Zap,
 } from 'lucide-angular';
-import { filter } from 'rxjs/operators';
-import { DevResilienceService } from '@/core/interceptors/dev-resilience.service';
+import { APP_VERSION } from '@/core/config/app-version';
 import { DatabaseSeedService } from '@/core/database/database-seed.service';
-import { ToastService } from '@/shared/ui/toast/toast.service';
-import { CommandPaletteComponent } from '@/shared/ui/command-palette/command-palette.component';
+import { DevResilienceService } from '@/core/interceptors/dev-resilience.service';
 import { ThemeService } from '@/core/services/theme.service';
-
-export interface BreadcrumbItem {
-  readonly label: string;
-  readonly url: string;
-}
+import { CommandPaletteComponent } from '@/shared/ui/command-palette/command-palette.component';
+import { ToastService } from '@/shared/ui/toast/toast.service';
+import { LayoutService } from './layout.service';
 
 const ROUTE_NAME_MAP: Record<string, string> = {
-  dashboard: 'Dashboard',
-  inventory: 'Gestão de Estoque',
-  treasury: 'Tesouraria & Carteira',
-  partners: 'Parceiros B2B',
+  '/dashboard': 'Painel',
+  '/inventory': 'Estoque',
+  '/treasury': 'Tesouraria',
+  '/partners': 'Parceiros',
 };
 
 @Component({
   selector: 'app-header',
   standalone: true,
-  imports: [CommonModule, RouterLink, LucideAngularModule, CommandPaletteComponent],
+  imports: [RouterLink, LucideAngularModule, CommandPaletteComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <header
-      class="h-16 px-6 bg-canvas-surface/90 backdrop-blur-md border-b border-border-subtle flex items-center justify-between gap-4 sticky top-0 z-20"
+      class="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-border-subtle bg-canvas-base px-3 sm:px-4 lg:px-6"
     >
-      <!-- Left: Breadcrumbs -->
-      <nav
-        aria-label="Breadcrumb"
-        class="flex items-center gap-2 text-xs font-medium text-content-muted"
+      <button
+        type="button"
+        class="ui-icon-btn lg:hidden"
+        aria-label="Abrir menu de navegação"
+        (click)="openMobileMenu($event)"
       >
-        <a routerLink="/" class="hover:text-content-primary transition-colors">AxiomERP</a>
-        @for (crumb of breadcrumbs(); track crumb.url; let last = $last) {
-          <lucide-icon [img]="ChevronRightIcon" [size]="14" class="text-border-strong" />
-          @if (!last) {
-            <a [routerLink]="crumb.url" class="hover:text-content-primary transition-colors">
-              {{ crumb.label }}
-            </a>
-          } @else {
-            <span class="text-brand font-semibold" aria-current="page">
-              {{ crumb.label }}
-            </span>
-          }
-        }
-      </nav>
+        <lucide-icon [img]="Menu" [size]="19" />
+      </button>
 
-      <!-- Center: Ctrl+K Search Trigger -->
-      <div class="hidden md:flex flex-1 max-w-md mx-4">
-        <button
-          type="button"
-          (click)="openCommandPalette()"
-          class="relative w-full flex items-center gap-3 px-3 py-1.5 rounded-lg bg-canvas-elevated border border-border-subtle text-xs text-content-disabled hover:border-brand hover:text-content-muted transition-colors focus-visible:ring-2 focus-visible:ring-brand"
-          aria-label="Abrir paleta de comandos (Ctrl+K)"
+      <div class="hidden min-w-0 items-center gap-1.5 text-sm md:flex" aria-label="Você está em">
+        <a
+          routerLink="/dashboard"
+          class="rounded-sm text-content-muted transition-colors hover:text-content-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
         >
-          <lucide-icon [img]="SearchIcon" [size]="16" />
-          <span class="flex-1 text-left">Pesquisar registros, SKUs, CNPJs… (Ctrl+K)</span>
-          <kbd class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border border-border-strong font-mono text-[10px]">
-            <lucide-icon [img]="CommandIcon" [size]="10" />K
-          </kbd>
-        </button>
+          AxiomERP
+        </a>
+        <lucide-icon [img]="ChevronRight" [size]="14" class="shrink-0 text-content-disabled" />
+        <span class="truncate font-medium text-content-primary">{{ currentTitle() }}</span>
       </div>
 
-      <!-- Right: Status + Dev Tools + Profile -->
-      <div class="flex items-center gap-3">
-        <!-- IndexedDB Sync Badge -->
-        <div
-          class="hidden sm:flex items-center gap-2 px-2 py-1 rounded-full bg-state-success-subtle border border-state-success text-state-success text-xs font-medium"
-          title="Banco IndexedDB ativo e sincronizado localmente"
+      <div class="ml-auto flex items-center gap-1">
+        <button
+          type="button"
+          class="ui-btn h-8 gap-2 px-2.5 text-content-muted hover:text-content-primary sm:min-w-[220px] sm:justify-start"
+          aria-label="Abrir busca de comandos"
+          (click)="openPalette()"
         >
-          <span class="relative flex h-2 w-2" aria-hidden="true">
-            <span
-              class="animate-ping absolute inline-flex h-full w-full rounded-full bg-state-success opacity-75"
-            ></span>
-            <span class="relative inline-flex rounded-full h-2 w-2 bg-state-success"></span>
-          </span>
-          <lucide-icon [img]="DatabaseIcon" [size]="14" />
-          <span>IndexedDB sync</span>
-        </div>
+          <lucide-icon [img]="Search" [size]="16" class="shrink-0" />
+          <span class="hidden sm:inline">Buscar comandos e páginas…</span>
+          <kbd
+            class="ml-auto hidden rounded border border-border-subtle bg-canvas-elevated px-1.5 py-0.5 font-mono text-[10px] text-content-muted sm:inline"
+          >
+            {{ shortcutLabel }}
+          </kbd>
+        </button>
 
-        <!-- ═══ DEV RESILIENCE PLAYGROUND ═══ -->
-        <div class="relative" id="dev-playground">
+        <button
+          type="button"
+          class="ui-icon-btn"
+          [attr.aria-label]="theme.mode() === 'dark' ? 'Usar tema claro' : 'Usar tema escuro'"
+          [title]="theme.mode() === 'dark' ? 'Usar tema claro' : 'Usar tema escuro'"
+          (click)="theme.toggle()"
+        >
+          <lucide-icon [img]="theme.mode() === 'dark' ? Sun : Moon" [size]="18" />
+        </button>
+
+        <div class="relative">
           <button
             type="button"
-            (click)="toggleDevMenu()"
-            class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-brand"
-            [class.border-state-warning]="devService.slowLatency() || devService.simulateError()"
-            [class.text-state-warning]="devService.slowLatency() || devService.simulateError()"
-            [class.bg-state-warning-subtle]="devService.slowLatency() || devService.simulateError()"
-            [class.border-border-subtle]="!devService.slowLatency() && !devService.simulateError()"
-            [class.text-content-muted]="!devService.slowLatency() && !devService.simulateError()"
-            [class.bg-canvas-surface]="!devService.slowLatency() && !devService.simulateError()"
-            aria-haspopup="true"
-            [attr.aria-expanded]="devMenuOpen()"
-            aria-label="Dev Resilience Playground"
-            title="Dev Resilience Playground — toggles de teste de engenharia"
+            class="ui-icon-btn"
+            aria-label="Ferramentas de demonstração"
+            aria-haspopup="menu"
+            [attr.aria-expanded]="toolsOpen()"
+            (click)="toggleTools($event)"
           >
-            <lucide-icon [img]="ZapIcon" [size]="14" />
-            <span class="hidden lg:inline">Dev Tools</span>
-            <lucide-icon [img]="ChevronDownIcon" [size]="12" />
+            <lucide-icon [img]="Ellipsis" [size]="19" />
           </button>
 
-          @if (devMenuOpen()) {
-            <!-- Popover Menu -->
+          @if (toolsOpen()) {
             <div
-              class="absolute right-0 top-full mt-2 w-72 p-4 rounded-xl border border-border-strong bg-canvas-elevated shadow-2xl space-y-4 z-50 animate-in fade-in slide-in-from-top-2 duration-150"
+              #toolsMenu
+              class="absolute right-0 top-11 z-50 w-[300px] rounded-lg border border-border-subtle bg-canvas-surface p-1.5 shadow-overlay"
               role="menu"
-              aria-label="Dev Resilience Playground"
+              aria-label="Ferramentas de demonstração"
             >
-              <div class="flex items-center gap-2 pb-3 border-b border-border-subtle">
-                <lucide-icon [img]="ZapIcon" [size]="14" class="text-state-warning" />
-                <span class="text-xs font-bold text-content-primary uppercase tracking-widest">
-                  Dev Resilience Playground
+              <div class="px-2.5 pb-2 pt-1.5">
+                <p class="text-sm font-medium text-content-primary">Ferramentas de demonstração</p>
+                <p class="mt-0.5 text-xs text-content-muted">Afetam apenas este navegador.</p>
+              </div>
+
+              <button
+                type="button"
+                role="menuitemcheckbox"
+                class="flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-canvas-elevated focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                [attr.aria-checked]="devTools.slowLatency()"
+                (click)="devTools.toggleSlowLatency()"
+              >
+                <lucide-icon [img]="Zap" [size]="16" class="mt-0.5 shrink-0 text-state-warning" />
+                <span class="min-w-0 flex-1">
+                  <span class="block text-sm text-content-primary">Latência +2 s</span>
+                  <span class="block text-xs text-content-muted">Simula rede lenta em todas as chamadas.</span>
                 </span>
-              </div>
+                <span
+                  class="mt-1.5 h-3.5 w-6 rounded-full border transition-colors"
+                  [class]="devTools.slowLatency() ? 'border-brand-fill bg-brand-fill' : 'border-border-strong bg-canvas-elevated'"
+                  aria-hidden="true"
+                ></span>
+              </button>
 
-              <!-- Toggle: Slow Latency -->
-              <div class="flex items-start justify-between gap-3">
-                <div>
-                  <p class="text-xs font-semibold text-content-primary">Simular Latência Lenta</p>
-                  <p class="text-[11px] text-content-muted mt-0.5">
-                    Adiciona +2s de delay nas chamadas HTTP para validar Skeleton Loaders.
+              <button
+                type="button"
+                role="menuitemcheckbox"
+                class="flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-canvas-elevated focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                [attr.aria-checked]="devTools.simulateError()"
+                (click)="devTools.toggleSimulateError()"
+              >
+                <lucide-icon [img]="AlertTriangle" [size]="16" class="mt-0.5 shrink-0 text-state-danger" />
+                <span class="min-w-0 flex-1">
+                  <span class="block text-sm text-content-primary">Forçar erro 500</span>
+                  <span class="block text-xs text-content-muted">Testa os estados de erro da interface.</span>
+                </span>
+                <span
+                  class="mt-1.5 h-3.5 w-6 rounded-full border transition-colors"
+                  [class]="devTools.simulateError() ? 'border-state-danger bg-state-danger' : 'border-border-strong bg-canvas-elevated'"
+                  aria-hidden="true"
+                ></span>
+              </button>
+
+              <div class="my-1 border-t border-border-subtle"></div>
+
+              @if (!confirmReset()) {
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-content-primary transition-colors hover:bg-canvas-elevated focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                  (click)="confirmReset.set(true)"
+                >
+                  <lucide-icon [img]="RotateCcw" [size]="16" class="shrink-0 text-content-muted" />
+                  Repopular dados de demonstração
+                </button>
+              } @else {
+                <div class="rounded-md bg-state-danger-subtle p-2.5" role="alert">
+                  <p class="text-xs font-medium text-state-danger">Substituir todos os dados locais?</p>
+                  <p class="mt-1 text-xs text-content-muted">
+                    Estoque, parceiros, transações e movimentos serão recriados. Esta ação não pode ser desfeita.
                   </p>
+                  <div class="mt-2 flex justify-end gap-2">
+                    <button type="button" class="ui-btn h-8 px-2.5 text-xs" (click)="confirmReset.set(false)">
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      class="ui-btn ui-btn-danger h-8 px-2.5 text-xs"
+                      [disabled]="resetting()"
+                      (click)="resetDemoData()"
+                    >
+                      {{ resetting() ? 'Repovoando…' : 'Repopular' }}
+                    </button>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  (click)="devService.toggleSlowLatency()"
-                  class="relative shrink-0 w-10 h-5 rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-brand"
-                  [class.bg-brand]="devService.slowLatency()"
-                  [class.bg-border-strong]="!devService.slowLatency()"
-                  [attr.aria-pressed]="devService.slowLatency()"
-                  [attr.aria-label]="devService.slowLatency() ? 'Desativar latência lenta' : 'Ativar latência lenta'"
-                  role="switch"
-                >
-                  <span
-                    class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-canvas-surface shadow transition-transform"
-                    [class.translate-x-5]="devService.slowLatency()"
-                  ></span>
-                </button>
-              </div>
+              }
 
-              <!-- Toggle: Simulate Error -->
-              <div class="flex items-start justify-between gap-3">
-                <div>
-                  <p class="text-xs font-semibold text-content-primary">Simular Erro HTTP 500</p>
-                  <p class="text-[11px] text-content-muted mt-0.5">
-                    Injeta cabeçalho X-Simulate-Error para validar Toast de erro e botão Retry.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  (click)="devService.toggleSimulateError()"
-                  class="relative shrink-0 w-10 h-5 rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-brand"
-                  [class.bg-state-danger]="devService.simulateError()"
-                  [class.bg-border-strong]="!devService.simulateError()"
-                  [attr.aria-pressed]="devService.simulateError()"
-                  [attr.aria-label]="devService.simulateError() ? 'Desativar simulação de erro' : 'Ativar simulação de erro'"
-                  role="switch"
-                >
-                  <span
-                    class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-canvas-surface shadow transition-transform"
-                    [class.translate-x-5]="devService.simulateError()"
-                  ></span>
-                </button>
-              </div>
-
-              <!-- Divider -->
-              <hr class="border-border-subtle" />
-
-              <!-- Reset Database -->
-              <div>
-                <p class="text-xs font-semibold text-content-primary mb-1">Resetar Base de Dados</p>
-                <p class="text-[11px] text-content-muted mb-3">
-                  Limpa o IndexedDB e re-executa o Seed com Faker.js (500 produtos, 120 transações).
-                </p>
-                <button
-                  type="button"
-                  (click)="resetDatabase()"
-                  [disabled]="resetting()"
-                  class="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-state-danger text-state-danger text-xs font-medium hover:bg-state-danger-subtle disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-visible:ring-2 focus-visible:ring-state-danger"
-                >
-                  <lucide-icon [img]="RotateCcwIcon" [size]="14" [class.animate-spin]="resetting()" />
-                  {{ resetting() ? 'Resetando…' : 'Resetar Base Local (Faker.js)' }}
-                </button>
+              <div class="mt-1 flex items-center gap-1.5 border-t border-border-subtle px-2.5 pb-1 pt-2 font-mono text-[10px] text-content-disabled">
+                <lucide-icon [img]="Database" [size]="12" />
+                v{{ version }} · IndexedDB local
               </div>
             </div>
           }
         </div>
-
-        <!-- Theme Toggle (Sun / Moon) -->
-        <button
-          type="button"
-          (click)="themeService.toggle()"
-          class="relative p-2 rounded-lg text-content-muted hover:text-content-primary hover:bg-canvas-elevated transition-colors focus-visible:ring-2 focus-visible:ring-brand"
-          [attr.aria-label]="themeService.mode() === 'dark' ? 'Ativar modo claro' : 'Ativar modo escuro'"
-          [title]="themeService.mode() === 'dark' ? 'Ativar modo claro' : 'Ativar modo escuro'"
-        >
-          @if (themeService.mode() === 'dark') {
-            <lucide-icon [img]="SunIcon" [size]="18" />
-          } @else {
-            <lucide-icon [img]="MoonIcon" [size]="18" />
-          }
-        </button>
-
-        <!-- Notifications button -->
-        <button
-          type="button"
-          class="relative p-2 rounded-lg text-content-muted hover:text-content-primary hover:bg-canvas-elevated transition-colors focus-visible:ring-2 focus-visible:ring-brand"
-          aria-label="Notificações do sistema"
-        >
-          <lucide-icon [img]="BellIcon" [size]="18" />
-          <span
-            class="absolute top-1 right-1 w-2 h-2 rounded-full bg-brand"
-            aria-hidden="true"
-          ></span>
-        </button>
-
-        <!-- User Profile -->
-        <div class="flex items-center gap-3 pl-3 border-l border-border-subtle">
-          <svg
-            viewBox="-8 -8 32.00 32.00"
-            width="32"
-            height="32"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            stroke="#fff"
-            aria-hidden="true"
-          >
-            <g id="SVGRepo_bgCarrier" stroke-width="0" transform="translate(0,0), scale(1)">
-              <rect
-                x="-8"
-                y="-8"
-                width="32.00"
-                height="32.00"
-                rx="16"
-                fill="#2563EB"
-                strokewidth="0"
-              ></rect>
-            </g>
-            <g
-              id="SVGRepo_tracerCarrier"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke="#CCCCCC"
-              stroke-width="0.032"
-            ></g>
-            <g id="SVGRepo_iconCarrier">
-              <path
-                d="M8 7C9.65685 7 11 5.65685 11 4C11 2.34315 9.65685 1 8 1C6.34315 1 5 2.34315 5 4C5 5.65685 6.34315 7 8 7Z"
-                fill="#fff"
-              ></path>
-              <path
-                d="M14 12C14 10.3431 12.6569 9 11 9H5C3.34315 9 2 10.3431 2 12V15H14V12Z"
-                fill="#fff"
-              ></path>
-            </g>
-          </svg>
-          <div class="hidden xl:flex flex-col">
-            <span class="text-xs font-semibold text-content-primary leading-tight">João Silva</span>
-            <span class="text-2xs font-medium text-brand">Administrador RBAC</span>
-          </div>
-        </div>
       </div>
     </header>
 
-    <!-- Command Palette (renders in DOM, opens via signal) -->
-    <app-command-palette #commandPalette />
+    <app-command-palette [open]="paletteOpen()" (closed)="paletteOpen.set(false)" />
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class HeaderComponent {
-  private readonly router = inject(Router);
-  private readonly destroyRef = inject(DestroyRef);
+  protected readonly layout = inject(LayoutService);
+  protected readonly theme = inject(ThemeService);
+  protected readonly devTools = inject(DevResilienceService);
 
-  protected readonly themeService = inject(ThemeService);
-  protected readonly devService = inject(DevResilienceService);
-  private readonly seedService = inject(DatabaseSeedService);
-  private readonly toastService = inject(ToastService);
-
-  private readonly commandPaletteRef =
-    viewChild<CommandPaletteComponent>('commandPalette');
-
-  protected readonly breadcrumbs = signal<readonly BreadcrumbItem[]>([]);
-  protected readonly devMenuOpen = signal(false);
+  protected readonly version = APP_VERSION;
+  protected readonly currentTitle = signal('Painel');
+  protected readonly paletteOpen = signal(false);
+  protected readonly toolsOpen = signal(false);
+  protected readonly confirmReset = signal(false);
   protected readonly resetting = signal(false);
 
-  protected readonly SearchIcon = Search;
-  protected readonly BellIcon = Bell;
-  protected readonly DatabaseIcon = Database;
-  protected readonly ChevronRightIcon = ChevronRight;
-  protected readonly ZapIcon = Zap;
-  protected readonly AlertTriangleIcon = AlertTriangle;
-  protected readonly RefreshCwIcon = RefreshCw;
-  protected readonly RotateCcwIcon = RotateCcw;
-  protected readonly ChevronDownIcon = ChevronDown;
-  protected readonly CommandIcon = Command;
-  protected readonly SunIcon = Sun;
-  protected readonly MoonIcon = Moon;
+  protected readonly Menu = Menu;
+  protected readonly Search = Search;
+  protected readonly Sun = Sun;
+  protected readonly Moon = Moon;
+  protected readonly Ellipsis = Ellipsis;
+  protected readonly ChevronRight = ChevronRight;
+  protected readonly Zap = Zap;
+  protected readonly AlertTriangle = AlertTriangle;
+  protected readonly RotateCcw = RotateCcw;
+  protected readonly Database = Database;
+
+  protected readonly shortcutLabel =
+    typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
+      ? '⌘K'
+      : 'Ctrl K';
+
+  private readonly toolsMenu = viewChild<ElementRef<HTMLElement>>('toolsMenu');
+  private readonly router = inject(Router);
+  private readonly seedService = inject(DatabaseSeedService);
+  private readonly toast = inject(ToastService);
 
   constructor() {
-    this.updateBreadcrumbs(this.router.url);
-
+    this.updateTitle(this.router.url);
     this.router.events
       .pipe(
-        filter((e): e is NavigationEnd => e instanceof NavigationEnd),
-        takeUntilDestroyed(this.destroyRef)
+        filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+        takeUntilDestroyed(inject(DestroyRef))
       )
-      .subscribe((event) => {
-        this.updateBreadcrumbs(event.urlAfterRedirects);
-        this.devMenuOpen.set(false);
-      });
+      .subscribe((event) => this.updateTitle(event.urlAfterRedirects));
   }
 
-  /** Global keyboard shortcut: Ctrl+K or Cmd+K opens the command palette */
-  @HostListener('document:keydown', ['$event'])
-  handleShortcuts(event: KeyboardEvent): void {
-    if ((event.ctrlKey || event.metaKey) && event.key === 'k') {
-      event.preventDefault();
-      this.openCommandPalette();
-    }
-
-    // Close dev menu on Escape
-    if (event.key === 'Escape' && this.devMenuOpen()) {
-      this.devMenuOpen.set(false);
-    }
+  protected openMobileMenu(event: Event): void {
+    this.layout.openMobile(event.currentTarget as HTMLElement);
   }
 
-  /** Close dev menu when clicking outside */
-  @HostListener('document:click', ['$event'])
-  onDocumentClick(event: MouseEvent): void {
-    const target = event.target as HTMLElement;
-    const devPlayground = document.getElementById('dev-playground');
-    if (devPlayground && !devPlayground.contains(target)) {
-      this.devMenuOpen.set(false);
-    }
+  protected openPalette(): void {
+    this.toolsOpen.set(false);
+    this.paletteOpen.set(true);
   }
 
-  protected openCommandPalette(): void {
-    this.commandPaletteRef()?.open();
+  protected toggleTools(event: Event): void {
+    event.stopPropagation();
+    this.toolsOpen.update((open) => !open);
+    this.confirmReset.set(false);
   }
 
-  protected toggleDevMenu(): void {
-    this.devMenuOpen.update((v) => !v);
-  }
-
-  protected async resetDatabase(): Promise<void> {
-    if (this.resetting()) return;
+  protected async resetDemoData(): Promise<void> {
     this.resetting.set(true);
     try {
       await this.seedService.resetDatabase();
-      this.toastService.success(
-        'Base Resetada',
-        'IndexedDB limpo e re-populado com dados Faker.js (500 produtos, 120 transações).'
-      );
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Erro ao resetar base.';
-      this.toastService.error('Erro no Reset', msg);
+      this.toast.success('Dados repovoados', 'A demonstração foi restaurada com novos dados.');
+      this.toolsOpen.set(false);
+      this.confirmReset.set(false);
+      window.setTimeout(() => window.location.reload(), 350);
+    } catch {
+      this.toast.error('Falha ao repopular', 'Não foi possível recriar os dados locais.');
     } finally {
       this.resetting.set(false);
-      this.devMenuOpen.set(false);
     }
   }
 
-  private updateBreadcrumbs(url: string): void {
-    const segments = url.split('?')[0].split('/').filter(Boolean);
-    const crumbs: BreadcrumbItem[] = [];
-
-    let currentUrl = '';
-    for (const seg of segments) {
-      currentUrl += `/${seg}`;
-      const label = ROUTE_NAME_MAP[seg] ?? seg;
-      crumbs.push({ label, url: currentUrl });
+  @HostListener('document:keydown', ['$event'])
+  protected onDocumentKeydown(event: KeyboardEvent): void {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      this.paletteOpen.update((open) => !open);
+      this.toolsOpen.set(false);
+      return;
     }
-
-    if (crumbs.length === 0) {
-      crumbs.push({ label: 'Dashboard', url: '/dashboard' });
+    if (event.key === 'Escape' && this.toolsOpen()) {
+      this.toolsOpen.set(false);
+      this.confirmReset.set(false);
     }
+  }
 
-    this.breadcrumbs.set(crumbs);
+  @HostListener('document:click', ['$event'])
+  protected onDocumentClick(event: MouseEvent): void {
+    if (!this.toolsOpen()) return;
+    const menu = this.toolsMenu()?.nativeElement;
+    const target = event.target as Node | null;
+    if (menu && target && !menu.contains(target)) {
+      this.toolsOpen.set(false);
+      this.confirmReset.set(false);
+    }
+  }
+
+  private updateTitle(url: string): void {
+    const path = url.split('?')[0].split('#')[0];
+    this.currentTitle.set(ROUTE_NAME_MAP[path] ?? 'Painel');
   }
 }

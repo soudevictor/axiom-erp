@@ -27,7 +27,7 @@ async function seedTransactions(items: TreasuryTransaction[]): Promise<void> {
 }
 
 function flushPromises(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 500));
+  return new Promise((resolve) => setTimeout(resolve, 800));
 }
 
 describe('TreasuryStore', () => {

@@ -1,18 +1,19 @@
 import { ChangeDetectionStrategy, Component, Input } from '@angular/core';
-import { CommonModule } from '@angular/common';
 
 export type SkeletonShape = 'rectangle' | 'circle' | 'text';
 
 @Component({
   selector: 'app-skeleton-loader',
   standalone: true,
-  imports: [CommonModule],
   template: `
-    <div class="flex flex-col gap-2 w-full" aria-busy="true" aria-label="Carregando conteúdo">
+    <div class="flex w-full flex-col gap-2" aria-busy="true" aria-label="Carregando conteúdo">
+      <span class="sr-only">Carregando conteúdo</span>
       @for (item of items; track $index) {
         <div
-          class="animate-pulse bg-canvas-elevated border border-border-subtle transition-all"
-          [ngClass]="shapeClasses"
+          class="ui-skeleton"
+          [class.rounded-full]="shape === 'circle'"
+          [class.rounded]="shape === 'text'"
+          [class.rounded-lg]="shape === 'rectangle'"
           [style.width]="width"
           [style.height]="height"
           aria-hidden="true"
@@ -23,24 +24,12 @@ export type SkeletonShape = 'rectangle' | 'circle' | 'text';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SkeletonLoaderComponent {
-  @Input() width: string = '100%';
-  @Input() height: string = '3rem';
+  @Input() width = '100%';
+  @Input() height = '3rem';
   @Input() shape: SkeletonShape = 'rectangle';
-  @Input() count: number = 1;
+  @Input() count = 1;
 
   protected get items(): number[] {
-    return Array.from({ length: Math.max(1, this.count) }, (_, i) => i);
-  }
-
-  protected get shapeClasses(): string {
-    switch (this.shape) {
-      case 'circle':
-        return 'rounded-full';
-      case 'text':
-        return 'rounded';
-      case 'rectangle':
-      default:
-        return 'rounded-lg';
-    }
+    return Array.from({ length: Math.max(1, this.count) }, (_, index) => index);
   }
 }

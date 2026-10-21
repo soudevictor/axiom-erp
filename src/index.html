@@ -1,15 +1,23 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="pt-BR" class="dark">
 <head>
   <meta charset="utf-8">
-  <title>AxiomERP — B2B Supply Chain &amp; Financial Suite</title>
-  <meta name="description" content="Plataforma B2B de Gestão de Cadeia de Suprimentos e Tesouraria Corporativa">
+  <title>AxiomERP — Operações de supply chain</title>
+  <meta name="description" content="Demonstração de gestão de estoque, parceiros e tesouraria para operações B2B.">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <base href="/">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <script>
+    try {
+      var stored = localStorage.getItem('axiom-theme');
+      if (stored === 'light') {
+        document.documentElement.classList.remove('dark');
+      }
+    } catch (e) {}
+  </script>
 </head>
 <body>
   <app-root></app-root>

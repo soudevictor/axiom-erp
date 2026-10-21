@@ -19,6 +19,26 @@ export function formatBrl(value: number): string {
 }
 
 /**
+ * Formats a value as a compact BRL string for dense axes and KPI contexts.
+ * @example formatCompactBrl(1_250_000) → "R$ 1,3 mi"
+ */
+export function formatCompactBrl(value: number): string {
+  const sign = value < 0 ? '-' : '';
+  const absolute = Math.abs(value);
+  if (absolute >= 1_000_000) {
+    return `${sign}R$ ${(absolute / 1_000_000).toLocaleString('pt-BR', {
+      maximumFractionDigits: 1,
+    })} mi`;
+  }
+  if (absolute >= 1_000) {
+    return `${sign}R$ ${(absolute / 1_000).toLocaleString('pt-BR', {
+      maximumFractionDigits: 0,
+    })} mil`;
+  }
+  return BRL_FORMATTER.format(value);
+}
+
+/**
  * Parses a formatted BRL string back to a float.
  * Accepts strings like "R$ 1.234,50", "1.234,50" or "1234.50".
  * Returns `NaN` if the input cannot be parsed.

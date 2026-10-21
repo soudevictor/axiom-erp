@@ -1,48 +1,34 @@
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpErrorResponse } from '@angular/common/http';
 import { computed, inject } from '@angular/core';
 import {
+  patchState,
   signalStore,
   withComputed,
   withHooks,
   withMethods,
   withState,
-  patchState,
 } from '@ngrx/signals';
-import { firstValueFrom } from 'rxjs';
+import { TreasuryApi } from '@/core/api/treasury.api';
 import {
   DEFAULT_TREASURY_FILTER,
+  type TransactionInput,
   type TransactionStatus,
   type TreasuryFilter,
+  type TreasurySummary,
   type TreasuryTransaction,
 } from '@/core/models/treasury.model';
-import type { PaginatedResponse } from '@/core/models/pagination.model';
-
-const API_URL = '/api/v1/treasury';
-const SUMMARY_URL = '/api/v1/treasury/summary';
 
 interface TreasuryState {
   transactions: readonly TreasuryTransaction[];
   totalItems: number;
   loading: boolean;
-  /** True while loadMoreItems() fetches next page */
   loadingMore: boolean;
+  saving: boolean;
   error: string | null;
   filters: TreasuryFilter;
-  summaryStats: {
-    totalReceivables: number;
-    totalPayables: number;
-    totalBalance: number;
-  } | null;
-  aging: {
-    overdue: TreasuryTransaction[];
-    today: TreasuryTransaction[];
-    next7: TreasuryTransaction[];
-    next30: TreasuryTransaction[];
-  } | null;
-  /** Whether more pages are available for infinite scroll */
-  hasMoreItems: boolean;
-  /** Current infinite-scroll page cursor */
-  infinitePage: number;
+  summary: TreasurySummary | null;
+  summaryLoading: boolean;
+  hasMore: boolean;
 }
 
 const initialState: TreasuryState = {
@@ -50,35 +36,42 @@ const initialState: TreasuryState = {
   totalItems: 0,
   loading: false,
   loadingMore: false,
+  saving: false,
   error: null,
   filters: DEFAULT_TREASURY_FILTER,
-  summaryStats: null,
-  aging: null,
-  hasMoreItems: true,
-  infinitePage: 1,
+  summary: null,
+  summaryLoading: false,
+  hasMore: true,
 };
 
-function buildHttpParams(filters: TreasuryFilter): HttpParams {
-  let params = new HttpParams()
-    .set('page', filters.page.toString())
-    .set('limit', filters.limit.toString())
-    .set('sortBy', filters.sortBy)
-    .set('sortOrder', filters.sortOrder);
+function messageFrom(error: unknown, fallback: string): string {
+  if (error instanceof HttpErrorResponse) {
+    const body = error.error as { message?: string } | null;
+    return body?.message ?? fallback;
+  }
+  return error instanceof Error ? error.message : fallback;
+}
 
-  if (filters.search) {
-    params = params.set('search', filters.search);
-  }
-  if (filters.type && filters.type !== 'ALL') {
-    params = params.set('type', filters.type);
-  }
-  if (filters.status && filters.status !== 'ALL') {
-    params = params.set('status', filters.status);
-  }
-  if (filters.category && filters.category !== 'ALL') {
-    params = params.set('category', filters.category);
-  }
-
-  return params;
+function fallbackTotals(transactions: readonly TreasuryTransaction[]): {
+  totalReceivables: number;
+  totalPayables: number;
+  totalBalance: number;
+} {
+  return {
+    totalReceivables: transactions
+      .filter((transaction) => transaction.type === 'INCOME' && transaction.status !== 'CANCELLED')
+      .reduce((sum, transaction) => sum + transaction.amount, 0),
+    totalPayables: transactions
+      .filter((transaction) => transaction.type === 'EXPENSE' && transaction.status !== 'CANCELLED')
+      .reduce((sum, transaction) => sum + transaction.amount, 0),
+    totalBalance: transactions
+      .filter((transaction) => transaction.status === 'COMPLETED')
+      .reduce(
+        (sum, transaction) =>
+          sum + (transaction.type === 'INCOME' ? transaction.amount : -transaction.amount),
+        0
+      ),
+  };
 }
 
 export const TreasuryStore = signalStore(
@@ -87,235 +80,200 @@ export const TreasuryStore = signalStore(
   withState(initialState),
 
   withComputed((store) => ({
-    totalReceivables: computed(() => {
-      const summary = store.summaryStats();
-      if (summary !== null) {
-        return summary.totalReceivables;
-      }
-      return store
-        .transactions()
-        .filter((t) => t.type === 'INCOME' && t.status !== 'CANCELLED')
-        .reduce((sum, t) => sum + t.amount, 0);
+    summaryStats: computed(() => {
+      const summary = store.summary();
+      return summary
+        ? {
+            totalReceivables: summary.totalReceivables,
+            totalPayables: summary.totalPayables,
+            totalBalance: summary.totalBalance,
+          }
+        : null;
     }),
 
-    totalPayables: computed(() => {
-      const summary = store.summaryStats();
-      if (summary !== null) {
-        return summary.totalPayables;
-      }
-      return store
-        .transactions()
-        .filter((t) => t.type === 'EXPENSE' && t.status !== 'CANCELLED')
-        .reduce((sum, t) => sum + t.amount, 0);
-    }),
+    summaryStatsFallback: computed(() => fallbackTotals(store.transactions())),
 
-    totalBalance: computed(() => {
-      const summary = store.summaryStats();
-      if (summary !== null) {
-        return summary.totalBalance;
-      }
-      const income = store
-        .transactions()
-        .filter((t) => t.type === 'INCOME' && t.status === 'COMPLETED')
-        .reduce((sum, t) => sum + t.amount, 0);
-
-      const expense = store
-        .transactions()
-        .filter((t) => t.type === 'EXPENSE' && t.status === 'COMPLETED')
-        .reduce((sum, t) => sum + t.amount, 0);
-
-      return income - expense;
-    }),
-
-    pendingCount: computed(() =>
-      store.transactions().filter((t) => t.status === 'PENDING').length
+    totalReceivables: computed(
+      () => store.summary()?.totalReceivables ?? fallbackTotals(store.transactions()).totalReceivables
     ),
+    totalPayables: computed(
+      () => store.summary()?.totalPayables ?? fallbackTotals(store.transactions()).totalPayables
+    ),
+    totalBalance: computed(
+      () => store.summary()?.totalBalance ?? fallbackTotals(store.transactions()).totalBalance
+    ),
+    pendingCount: computed(
+      () => store.transactions().filter((transaction) => transaction.status === 'PENDING').length
+    ),
+    aging: computed(() => store.summary()?.aging ?? null),
+    realized: computed(() => store.summary()?.realized ?? null),
+    monthly: computed(() => store.summary()?.monthly ?? []),
+    upcoming30: computed(() => store.summary()?.upcoming30 ?? null),
+    lastMonth: computed(() => store.summary()?.lastMonth ?? null),
 
     hasActiveFilters: computed(() => {
-      const f = store.filters();
+      const filters = store.filters();
       return (
-        f.search !== '' ||
-        f.type !== 'ALL' ||
-        f.status !== 'ALL' ||
-        f.category !== 'ALL'
+        filters.search !== '' ||
+        filters.type !== 'ALL' ||
+        filters.status !== 'ALL' ||
+        filters.category !== 'ALL'
       );
+    }),
+    activeFilterCount: computed(() => {
+      const filters = store.filters();
+      return [
+        filters.search !== '',
+        filters.type !== 'ALL',
+        filters.status !== 'ALL',
+        filters.category !== 'ALL',
+      ].filter(Boolean).length;
+    }),
+    isEmpty: computed(() => !store.loading() && store.totalItems() === 0),
+    hasMoreItems: computed(() => store.hasMore()),
+    isFilteredEmpty: computed(() => {
+      const filters = store.filters();
+      const hasFilters =
+        filters.search !== '' ||
+        filters.type !== 'ALL' ||
+        filters.status !== 'ALL' ||
+        filters.category !== 'ALL';
+      return !store.loading() && store.totalItems() === 0 && hasFilters;
     }),
   })),
 
   withMethods((store) => {
-    const http = inject(HttpClient);
+    const api = inject(TreasuryApi);
 
     return {
-      /**
-       * Loads global KPI summary from ALL transactions (unpaginated).
-       * Decoupled from the paginated transaction list so KPIs are always accurate.
-       */
       async loadSummary(): Promise<void> {
+        patchState(store, { summaryLoading: true });
         try {
-          const summary = await firstValueFrom(
-            http.get<{
-              totalReceivables: number;
-              totalPayables: number;
-              totalBalance: number;
-              totalItems: number;
-              aging: {
-                overdue: TreasuryTransaction[];
-                today: TreasuryTransaction[];
-                next7: TreasuryTransaction[];
-                next30: TreasuryTransaction[];
-              };
-            }>(SUMMARY_URL)
-          );
-
+          const summary = await api.summary();
           patchState(store, {
-            summaryStats: {
-              totalReceivables: summary.totalReceivables,
-              totalPayables: summary.totalPayables,
-              totalBalance: summary.totalBalance,
-            },
-            aging: summary.aging,
-            totalItems: summary.totalItems,
+            summary,
+            totalItems: store.totalItems() || summary.totalItems,
+            summaryLoading: false,
           });
         } catch {
-          // Summary fetch failure is non-blocking; computed signals will fallback
+          patchState(store, { summaryLoading: false });
         }
       },
 
       async loadTransactions(): Promise<void> {
-        patchState(store, { loading: true, error: null, infinitePage: 1 });
-
+        patchState(store, { loading: true, error: null });
         try {
-          const params = buildHttpParams(store.filters());
-          const response = await firstValueFrom(
-            http.get<PaginatedResponse<TreasuryTransaction>>(API_URL, { params })
-          );
-
-          const summaryStats = response.summary
-            ? {
-                totalReceivables: response.summary['totalReceivables'] ?? 0,
-                totalPayables: response.summary['totalPayables'] ?? 0,
-                totalBalance: response.summary['totalBalance'] ?? 0,
-              }
-            : null;
-
+          const response = await api.list({ ...store.filters(), page: 1 });
           patchState(store, {
             transactions: response.data,
             totalItems: response.totalItems,
             loading: false,
-            summaryStats,
-            hasMoreItems: response.hasNextPage,
-            infinitePage: 1,
+            hasMore: response.hasNextPage,
           });
-        } catch (err: unknown) {
-          const message =
-            err instanceof Error
-              ? err.message
-              : 'Erro ao carregar transações financeiras.';
-          patchState(store, { error: message, loading: false });
+        } catch (error: unknown) {
+          patchState(store, {
+            error: messageFrom(error, 'Erro ao carregar transações financeiras.'),
+            loading: false,
+          });
         }
       },
 
-      /** Appends the next page to existing transactions (infinite scroll). */
+      async load(): Promise<void> {
+        await Promise.all([this.loadTransactions(), this.loadSummary()]);
+      },
+
       async loadMoreItems(): Promise<void> {
-        if (store.loadingMore() || !store.hasMoreItems()) return;
-
-        const nextPage = store.infinitePage() + 1;
-        patchState(store, { loadingMore: true });
-
+        if (store.loadingMore() || !store.hasMore()) return;
+        const nextPage = store.filters().page + 1;
+        patchState(store, { loadingMore: true, error: null });
         try {
-          const params = buildHttpParams({ ...store.filters(), page: nextPage });
-          const response = await firstValueFrom(
-            http.get<PaginatedResponse<TreasuryTransaction>>(API_URL, { params })
-          );
-
+          const response = await api.list({ ...store.filters(), page: nextPage });
           patchState(store, {
             transactions: [...store.transactions(), ...response.data],
             totalItems: response.totalItems,
+            filters: { ...store.filters(), page: nextPage },
             loadingMore: false,
-            hasMoreItems: response.hasNextPage,
-            infinitePage: nextPage,
+            hasMore: response.hasNextPage,
           });
-        } catch (err: unknown) {
-          const message =
-            err instanceof Error ? err.message : 'Erro ao carregar mais transações.';
-          patchState(store, { error: message, loadingMore: false });
+        } catch (error: unknown) {
+          patchState(store, {
+            error: messageFrom(error, 'Erro ao carregar mais transações.'),
+            loadingMore: false,
+          });
         }
       },
 
-      async setFilters(partialFilters: Partial<TreasuryFilter>): Promise<void> {
-        const safeFilters = partialFilters || {};
+      async setFilters(partial: Partial<TreasuryFilter>): Promise<void> {
         patchState(store, {
-          filters: {
-            ...store.filters(),
-            ...safeFilters,
-            page: safeFilters.page ?? 1,
-          },
-          hasMoreItems: true,
-          infinitePage: 1,
+          filters: { ...store.filters(), ...partial, page: 1 },
+          hasMore: true,
         });
         await this.loadTransactions();
       },
 
-      async addTransaction(
-        tx: Omit<TreasuryTransaction, 'id'>
-      ): Promise<void> {
-        patchState(store, { loading: true, error: null });
+      async setSortBy(column: keyof TreasuryTransaction): Promise<void> {
+        const current = store.filters();
+        const sortOrder =
+          current.sortBy === column && current.sortOrder === 'asc' ? 'desc' : 'asc';
+        patchState(store, {
+          filters: { ...current, sortBy: column, sortOrder, page: 1 },
+        });
+        await this.loadTransactions();
+      },
 
+      async addTransaction(input: TransactionInput): Promise<TreasuryTransaction> {
+        patchState(store, { saving: true, error: null });
         try {
-          await firstValueFrom(
-            http.post<TreasuryTransaction>(API_URL, tx)
-          );
-          // Reload to get the full updated list with server-assigned ID, ordered correctly
-          await this.loadTransactions();
-          await this.loadSummary();
-        } catch (err: unknown) {
-          const message =
-            err instanceof Error ? err.message : 'Erro ao cadastrar transação.';
-          patchState(store, { error: message, loading: false });
+          const transaction = await api.create(input);
+          patchState(store, { saving: false });
+          await this.load();
+          return transaction;
+        } catch (error: unknown) {
+          patchState(store, {
+            saving: false,
+            error: messageFrom(error, 'Erro ao cadastrar transação.'),
+          });
+          throw error;
         }
       },
 
       async updateTransactionStatus(
         id: string,
         status: TransactionStatus
-      ): Promise<void> {
-        patchState(store, { loading: true, error: null });
-
+      ): Promise<TreasuryTransaction> {
+        patchState(store, { saving: true, error: null });
         try {
-          const paymentDate =
-            status === 'COMPLETED' ? new Date().toISOString() : undefined;
-
-          await firstValueFrom(
-            http.put<TreasuryTransaction>(`${API_URL}/${id}`, {
-              status,
-              paymentDate,
-            })
-          );
-          await this.loadTransactions();
+          const transaction = await api.updateStatus(id, status);
+          patchState(store, {
+            saving: false,
+            transactions: store
+              .transactions()
+              .map((candidate) => (candidate.id === id ? transaction : candidate)),
+          });
           await this.loadSummary();
-        } catch (err: unknown) {
-          const message =
-            err instanceof Error
-              ? err.message
-              : 'Erro ao atualizar status da transação.';
-          patchState(store, { error: message, loading: false });
+          return transaction;
+        } catch (error: unknown) {
+          patchState(store, {
+            saving: false,
+            error: messageFrom(error, 'Erro ao atualizar status da transação.'),
+          });
+          throw error;
         }
       },
 
-      resetFilters(): void {
+      async resetFilters(): Promise<void> {
         patchState(store, {
           filters: DEFAULT_TREASURY_FILTER,
-          hasMoreItems: true,
-          infinitePage: 1,
+          hasMore: true,
         });
+        await this.loadTransactions();
       },
     };
   }),
 
   withHooks({
     onInit(store) {
-      store.loadSummary();
-      store.loadTransactions();
+      void store.load();
     },
   })
 );

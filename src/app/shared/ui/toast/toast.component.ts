@@ -1,11 +1,10 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import {
-  LucideAngularModule,
-  CheckCircle,
-  AlertTriangle,
   AlertCircle,
+  AlertTriangle,
+  CheckCircle,
   Info,
+  LucideAngularModule,
   X,
 } from 'lucide-angular';
 import { ToastService, type ToastType } from './toast.service';
@@ -13,74 +12,84 @@ import { ToastService, type ToastType } from './toast.service';
 @Component({
   selector: 'app-toast',
   standalone: true,
-  imports: [CommonModule, LucideAngularModule],
+  imports: [LucideAngularModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div
-      class="fixed bottom-6 right-6 z-50 flex flex-col gap-3 max-w-sm w-full pointer-events-none"
+      class="pointer-events-none fixed bottom-4 right-4 z-[70] flex w-[calc(100%-2rem)] max-w-[380px] flex-col gap-2 sm:bottom-6 sm:right-6"
       aria-live="polite"
       aria-atomic="true"
     >
       @for (toast of toastService.toasts(); track toast.id) {
         <div
-          class="pointer-events-auto flex items-start gap-3 p-4 rounded-xl border shadow-elevation-2 backdrop-blur-md transition-all duration-300 animate-in slide-in-from-bottom-2"
-          [ngClass]="containerClasses[toast.type]"
-          role="alert"
+          class="pointer-events-auto flex items-start gap-2.5 rounded-lg border bg-canvas-surface p-3 shadow-overlay"
+          [class]="borderClass[toast.type]"
+          role="status"
+          (mouseenter)="toastService.pause(toast.id)"
+          (mouseleave)="toastService.resume(toast.id)"
+          (focusin)="toastService.pause(toast.id)"
+          (focusout)="toastService.resume(toast.id)"
         >
-          <div class="mt-0.5 shrink-0" aria-hidden="true">
+          <span class="mt-0.5 shrink-0" aria-hidden="true">
             @switch (toast.type) {
               @case ('SUCCESS') {
-                <lucide-icon [img]="CheckCircleIcon" class="text-state-success" [size]="20" />
+                <lucide-icon [img]="CheckCircle" [size]="18" class="text-state-success" />
               }
               @case ('WARNING') {
-                <lucide-icon [img]="AlertTriangleIcon" class="text-state-warning" [size]="20" />
+                <lucide-icon [img]="AlertTriangle" [size]="18" class="text-state-warning" />
               }
               @case ('ERROR') {
-                <lucide-icon [img]="AlertCircleIcon" class="text-state-danger" [size]="20" />
+                <lucide-icon [img]="AlertCircle" [size]="18" class="text-state-danger" />
               }
               @case ('INFO') {
-                <lucide-icon [img]="InfoIcon" class="text-state-info" [size]="20" />
+                <lucide-icon [img]="Info" [size]="18" class="text-state-info" />
               }
+            }
+          </span>
+
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-medium leading-5 text-content-primary">{{ toast.title }}</p>
+            @if (toast.message) {
+              <p class="mt-0.5 text-xs leading-5 text-content-muted">{{ toast.message }}</p>
             }
           </div>
 
-          <div class="flex-1 min-w-0">
-            <h4 class="text-sm font-semibold text-content-primary leading-tight">
-              {{ toast.title }}
-            </h4>
-            @if (toast.message) {
-              <p class="mt-1 text-xs text-content-muted leading-relaxed">
-                {{ toast.message }}
-              </p>
-            }
-          </div>
+          @if (toast.action) {
+            <button
+              type="button"
+              class="h-7 shrink-0 rounded px-1.5 text-xs font-medium text-brand underline decoration-brand/40 underline-offset-2 hover:bg-brand-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+              (click)="toastService.runAction(toast.id)"
+            >
+              {{ toast.action.label }}
+            </button>
+          }
 
           <button
             type="button"
-            class="shrink-0 p-1 rounded-lg text-content-muted hover:text-content-primary hover:bg-canvas-elevated transition-colors focus-visible:ring-2 focus-visible:ring-brand"
-            (click)="toastService.remove(toast.id)"
+            class="-mr-1 -mt-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-content-muted transition-colors hover:bg-canvas-elevated hover:text-content-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
             aria-label="Fechar notificação"
+            (click)="toastService.remove(toast.id)"
           >
-            <lucide-icon [img]="XIcon" [size]="16" />
+            <lucide-icon [img]="X" [size]="15" />
           </button>
         </div>
       }
     </div>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ToastComponent {
   protected readonly toastService = inject(ToastService);
 
-  protected readonly CheckCircleIcon = CheckCircle;
-  protected readonly AlertTriangleIcon = AlertTriangle;
-  protected readonly AlertCircleIcon = AlertCircle;
-  protected readonly InfoIcon = Info;
-  protected readonly XIcon = X;
+  protected readonly CheckCircle = CheckCircle;
+  protected readonly AlertTriangle = AlertTriangle;
+  protected readonly AlertCircle = AlertCircle;
+  protected readonly Info = Info;
+  protected readonly X = X;
 
-  protected readonly containerClasses: Record<ToastType, string> = {
-    SUCCESS: 'bg-canvas-elevated border-state-success text-content-primary',
-    WARNING: 'bg-canvas-elevated border-state-warning text-content-primary',
-    ERROR:   'bg-canvas-elevated border-state-danger  text-content-primary',
-    INFO:    'bg-canvas-elevated border-state-info    text-content-primary',
+  protected readonly borderClass: Record<ToastType, string> = {
+    SUCCESS: 'border-l-2 border-l-state-success border-border-subtle',
+    WARNING: 'border-l-2 border-l-state-warning border-border-subtle',
+    ERROR: 'border-l-2 border-l-state-danger border-border-subtle',
+    INFO: 'border-l-2 border-l-state-info border-border-subtle',
   };
 }

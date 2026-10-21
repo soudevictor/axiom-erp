@@ -1,46 +1,58 @@
-import { ChangeDetectionStrategy, Component } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { RouterOutlet } from '@angular/router';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
+import { filter } from 'rxjs/operators';
+import { LayoutService } from './layout.service';
 import { SidebarComponent } from './sidebar.component';
 import { HeaderComponent } from './header.component';
-import { ToastComponent } from '../toast/toast.component';
+import { ToastComponent } from '@/shared/ui/toast/toast.component';
 
 @Component({
   selector: 'app-main-layout',
   standalone: true,
-  imports: [
-    CommonModule,
-    RouterOutlet,
-    SidebarComponent,
-    HeaderComponent,
-    ToastComponent,
-  ],
+  imports: [RouterOutlet, SidebarComponent, HeaderComponent, ToastComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="flex h-screen w-screen overflow-hidden bg-canvas-base text-content-primary antialiased">
-      <!-- Sidebar -->
+    <a
+      href="#main-content"
+      class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-md focus:bg-brand-fill focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-white"
+    >
+      Pular para o conteúdo
+    </a>
+
+    <div class="flex min-h-dvh bg-canvas-base">
       <app-sidebar />
 
-      <!-- Content Area -->
-      <div class="flex flex-col flex-1 min-w-0 h-screen overflow-hidden">
-        <!-- Header -->
+      <div
+        class="flex min-w-0 flex-1 flex-col"
+        [attr.inert]="layout.mobileOpen() ? '' : null"
+        [attr.aria-hidden]="layout.mobileOpen() ? 'true' : null"
+      >
         <app-header />
 
-        <!-- Main Viewport -->
-        <main
-          class="flex-1 overflow-y-auto p-6 md:p-8 bg-canvas-base"
-          id="main-content"
-          tabindex="-1"
-        >
-          <div class="max-w-7xl mx-auto space-y-6">
+        <main id="main-content" tabindex="-1" class="flex-1 px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
+          <div class="mx-auto w-full max-w-[1440px]">
             <router-outlet />
           </div>
         </main>
       </div>
-
-      <!-- Global Toast Container -->
-      <app-toast />
     </div>
+
+    <app-toast />
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class MainLayoutComponent {}
+export class MainLayoutComponent {
+  protected readonly layout = inject(LayoutService);
+
+  private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
+
+  constructor() {
+    this.router.events
+      .pipe(
+        filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => this.layout.closeMobile());
+  }
+}

@@ -1,0 +1,321 @@
+import type { InventoryCategory } from '@/core/models/inventory.model';
+import type { PartnerCategory, PartnerStatus } from '@/core/models/partner.model';
+import type { TransactionType } from '@/core/models/treasury.model';
+
+export const SEED = 0xa7102026;
+export const SEED_INVENTORY_COUNT = 500;
+export const SEED_TRANSACTION_COUNT = 120;
+
+export const INVENTORY_CATEGORY_PREFIX: Record<InventoryCategory, string> = {
+  ELECTRONICS: 'ELE',
+  HARDWARE: 'HAR',
+  LOGISTICS: 'LOG',
+  OFFICE: 'OFF',
+};
+
+export const PRODUCT_NAMES: Record<InventoryCategory, readonly string[]> = {
+  ELECTRONICS: [
+    'Cabo HDMI 2.1',
+    'Fonte ATX Modular',
+    'SSD NVMe Gen4',
+    'Memória DDR5',
+    'Placa de Rede 10GbE',
+    'Hub USB-C',
+    'Webcam Ultra HD',
+    'Mouse Sem Fio',
+    'Teclado Mecânico',
+    'Monitor LED 27"',
+    'Dock Station USB-C',
+    'Adaptador DisplayPort',
+  ],
+  HARDWARE: [
+    'Parafuso Phillips M3',
+    'Porca Sextavada M6',
+    'Arruela de Pressão',
+    'Broca HSS 6 mm',
+    'Serra Circular',
+    'Chave Torx T25',
+    'Alicate Universal',
+    'Trena Laser 50 m',
+    'Nível a Laser',
+    'Jogo de Chaves Combinadas',
+    'Disco de Corte',
+    'Martelo de Borracha',
+  ],
+  LOGISTICS: [
+    'Caixa de Papelão 40x30',
+    'Fita Adesiva 48 mm',
+    'Pallet PBR 1200x1000',
+    'Stretch Film 500 mm',
+    'Etiqueta Térmica 100x50',
+    'Cinta de Amarração 5 t',
+    'Contentor Plástico',
+    'Lacre de Segurança',
+    'Cantoneira de Proteção',
+    'Filme Bolha 1 m',
+  ],
+  OFFICE: [
+    'Resma de Papel A4',
+    'Caneta Esferográfica',
+    'Grampeador de Mesa',
+    'Clips Niquelado 2/0',
+    'Pasta Catálogo A4',
+    'Bloco Adesivo 76x76',
+    'Marcador Permanente',
+    'Tesoura de Mesa',
+    'Calculadora Financeira',
+    'Organizador de Mesa',
+  ],
+};
+
+export const PRODUCT_VARIANTS = [
+  'Compacto',
+  'Profissional',
+  'Industrial',
+  'Série 2',
+  'Alta Performance',
+  'Reforçado',
+  'Econômico',
+  'Premium',
+] as const;
+
+export interface SeedPartner {
+  readonly id: string;
+  readonly cnpjBase: string;
+  readonly companyName: string;
+  readonly tradeName: string;
+  readonly category: PartnerCategory;
+  readonly status: PartnerStatus;
+  readonly creditLimit: number;
+  readonly creditUsed: number;
+  readonly state: string;
+  readonly contactName: string;
+  readonly email: string;
+  readonly phone: string;
+  readonly statusReason?: string;
+  readonly createdAtDaysAgo: number;
+  readonly updatedAtDaysAgo: number;
+}
+
+export const SEED_PARTNERS: readonly SeedPartner[] = [
+  {
+    id: 'PART-001',
+    cnpjBase: '112223330001',
+    companyName: 'TechSupply Brasil Distribuidora Ltda',
+    tradeName: 'TechSupply Brasil',
+    category: 'FORNECEDOR',
+    status: 'HOMOLOGADO',
+    creditLimit: 550000,
+    creditUsed: 385000,
+    state: 'SP',
+    contactName: 'Renata Almeida',
+    email: 'renata.almeida@techsupply.com.br',
+    phone: '11987451230',
+    createdAtDaysAgo: 920,
+    updatedAtDaysAgo: 4,
+  },
+  {
+    id: 'PART-002',
+    cnpjBase: '223334440001',
+    companyName: 'MegaLogística Soluções de Transporte S.A.',
+    tradeName: 'MegaLogística',
+    category: 'DISTRIBUIDOR',
+    status: 'HOMOLOGADO',
+    creditLimit: 720000,
+    creditUsed: 540000,
+    state: 'RJ',
+    contactName: 'Bruno Tavares',
+    email: 'bruno.tavares@megalog.com.br',
+    phone: '21996541220',
+    createdAtDaysAgo: 760,
+    updatedAtDaysAgo: 2,
+  },
+  {
+    id: 'PART-003',
+    cnpjBase: '334445550001',
+    companyName: 'Escritório Central de Eletrônicos Eireli',
+    tradeName: 'Central Eletrônicos',
+    category: 'CLIENTE_DIRETO',
+    status: 'EM_ANALISE',
+    creditLimit: 180000,
+    creditUsed: 0,
+    state: 'MG',
+    contactName: 'Camila Rocha',
+    email: 'camila@centraleletronicos.com.br',
+    phone: '31988117744',
+    createdAtDaysAgo: 18,
+    updatedAtDaysAgo: 18,
+  },
+  {
+    id: 'PART-004',
+    cnpjBase: '445556660001',
+    companyName: 'Hardware & Cia Suprimentos Industriais Ltda',
+    tradeName: 'Hardware & Cia',
+    category: 'FORNECEDOR',
+    status: 'HOMOLOGADO',
+    creditLimit: 420000,
+    creditUsed: 260000,
+    state: 'PR',
+    contactName: 'Diego Martins',
+    email: 'diego.martins@hardwarecia.com.br',
+    phone: '41991234455',
+    createdAtDaysAgo: 610,
+    updatedAtDaysAgo: 9,
+  },
+  {
+    id: 'PART-005',
+    cnpjBase: '556667770001',
+    companyName: 'Global Logistics & Freight Corp',
+    tradeName: 'Global Freight',
+    category: 'DISTRIBUIDOR',
+    status: 'BLOQUEADO',
+    creditLimit: 900000,
+    creditUsed: 810000,
+    state: 'RS',
+    contactName: 'Eduardo Nunes',
+    email: 'eduardo.nunes@globalfreight.com',
+    phone: '51992558877',
+    statusReason: 'Parcela vencida há mais de 30 dias; cadastro suspenso para renegociação.',
+    createdAtDaysAgo: 1040,
+    updatedAtDaysAgo: 6,
+  },
+  {
+    id: 'PART-006',
+    cnpjBase: '667778880001',
+    companyName: 'Nexus Componentes S.A.',
+    tradeName: 'Nexus Componentes',
+    category: 'FORNECEDOR',
+    status: 'HOMOLOGADO',
+    creditLimit: 380000,
+    creditUsed: 300000,
+    state: 'SP',
+    contactName: 'Patrícia Lima',
+    email: 'patricia.lima@nexuscomponentes.com.br',
+    phone: '11996334422',
+    createdAtDaysAgo: 880,
+    updatedAtDaysAgo: 1,
+  },
+  {
+    id: 'PART-007',
+    cnpjBase: '778889990001',
+    companyName: 'Aurora Papelaria Corporativa Ltda',
+    tradeName: 'Aurora Papelaria',
+    category: 'CLIENTE_DIRETO',
+    status: 'HOMOLOGADO',
+    creditLimit: 160000,
+    creditUsed: 96000,
+    state: 'MG',
+    contactName: 'Sofia Andrade',
+    email: 'sofia.andrade@aurorapapelaria.com.br',
+    phone: '31987445566',
+    createdAtDaysAgo: 540,
+    updatedAtDaysAgo: 12,
+  },
+  {
+    id: 'PART-008',
+    cnpjBase: '889990010001',
+    companyName: 'Vetor Ferramentas Industriais Ltda',
+    tradeName: 'Vetor Ferramentas',
+    category: 'FORNECEDOR',
+    status: 'EM_ANALISE',
+    creditLimit: 240000,
+    creditUsed: 12000,
+    state: 'PR',
+    contactName: 'Marcos Vieira',
+    email: 'marcos.vieira@vetorferramentas.com.br',
+    phone: '41988776655',
+    createdAtDaysAgo: 11,
+    updatedAtDaysAgo: 11,
+  },
+  {
+    id: 'PART-009',
+    cnpjBase: '990011120001',
+    companyName: 'Comercial Sul Distribuidora de Suprimentos S.A.',
+    tradeName: 'Comercial Sul',
+    category: 'DISTRIBUIDOR',
+    status: 'HOMOLOGADO',
+    creditLimit: 610000,
+    creditUsed: 380000,
+    state: 'RS',
+    contactName: 'Luciana Prado',
+    email: 'luciana.prado@comercialsul.com.br',
+    phone: '51991336677',
+    createdAtDaysAgo: 700,
+    updatedAtDaysAgo: 3,
+  },
+  {
+    id: 'PART-010',
+    cnpjBase: '101112130001',
+    companyName: 'Prisma Tecnologia B2B Ltda',
+    tradeName: 'Prisma Tech',
+    category: 'CLIENTE_DIRETO',
+    status: 'HOMOLOGADO',
+    creditLimit: 300000,
+    creditUsed: 165000,
+    state: 'SP',
+    contactName: 'Thiago Barros',
+    email: 'thiago.barros@prismatech.com.br',
+    phone: '11994667788',
+    createdAtDaysAgo: 430,
+    updatedAtDaysAgo: 7,
+  },
+  {
+    id: 'PART-011',
+    cnpjBase: '121314150001',
+    companyName: 'NorteLog Transportes Ltda',
+    tradeName: 'NorteLog',
+    category: 'DISTRIBUIDOR',
+    status: 'EM_ANALISE',
+    creditLimit: 130000,
+    creditUsed: 8000,
+    state: 'RJ',
+    contactName: 'Aline Freitas',
+    email: 'aline.freitas@nortelog.com.br',
+    phone: '21987334411',
+    createdAtDaysAgo: 6,
+    updatedAtDaysAgo: 6,
+  },
+  {
+    id: 'PART-012',
+    cnpjBase: '141516170001',
+    companyName: 'Atlas Office Supplies Ltda',
+    tradeName: 'Atlas Office',
+    category: 'CLIENTE_DIRETO',
+    status: 'BLOQUEADO',
+    creditLimit: 210000,
+    creditUsed: 180000,
+    state: 'MG',
+    contactName: 'Gustavo Reis',
+    email: 'gustavo.reis@atlasoffice.com.br',
+    phone: '31993112233',
+    statusReason: 'Limite de crédito excedido; aguardando regularização financeira.',
+    createdAtDaysAgo: 380,
+    updatedAtDaysAgo: 5,
+  },
+];
+
+export const INCOME_DESCRIPTIONS = [
+  'Recebimento de fatura B2B',
+  'Liquidação de pedido corporativo',
+  'Contrato de fornecimento mensal',
+  'Venda de lote de suprimentos',
+  'Recebimento de cliente distribuidor',
+] as const;
+
+export const EXPENSE_DESCRIPTIONS: Record<TransactionType, readonly string[]> = {
+  INCOME: INCOME_DESCRIPTIONS,
+  EXPENSE: [
+    'Pagamento de fornecedor de componentes',
+    'Frete e transporte de lote',
+    'Recolhimento de impostos',
+    'Manutenção preventiva de armazém',
+    'Compra de insumos operacionais',
+  ],
+};
+
+export const AGING_BUCKETS = [
+  { id: 'overdue', label: 'Vencidos' },
+  { id: 'today', label: 'Vencem hoje' },
+  { id: 'next7', label: 'Próximos 7 dias' },
+  { id: 'next30', label: 'Próximos 30 dias' },
+] as const;

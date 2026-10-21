@@ -1,0 +1,5 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist/axiom-erp/browser",
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+}

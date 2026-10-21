@@ -456,7 +456,7 @@ export class TreasuryComponent implements OnInit {
    * Relies on the globally decoupled store.aging() response.
    */
   protected readonly agingBuckets = computed<readonly AgingBucket[]>(() => {
-    const sum = (arr: TreasuryTransaction[] | undefined): number =>
+    const sum = (arr: readonly TreasuryTransaction[] | undefined): number =>
       arr ? arr.reduce((acc, t) => acc + t.amount, 0) : 0;
 
     const aging = this.treasuryStore.aging();
