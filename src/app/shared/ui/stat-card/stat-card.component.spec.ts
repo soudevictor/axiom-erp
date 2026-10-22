@@ -25,7 +25,7 @@ describe('StatCardComponent', () => {
     expect(compiled.textContent).toContain('1.500.250');
   });
 
-  it('deve exibir variação positiva com classe state-success-subtle quando isPositive é true', () => {
+  it('deve exibir variação positiva com o token de sucesso quando isPositive é true', () => {
     component.title = 'Vendas';
     component.value = 'R$ 100,00';
     component.trend = { value: 15.5, isPositive: true, label: 'mês anterior' };
@@ -33,13 +33,10 @@ describe('StatCardComponent', () => {
 
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.textContent).toContain('+15.5%');
-
-    // Semantic token class applied by ngClass for positive trend
-    const badgeEl = compiled.querySelector('.bg-state-success-subtle');
-    expect(badgeEl).not.toBeNull();
+    expect(compiled.querySelector('.text-state-success')).not.toBeNull();
   });
 
-  it('deve exibir variação negativa com classe state-danger-subtle quando isPositive é false', () => {
+  it('deve exibir variação negativa com o token de perigo quando isPositive é false', () => {
     component.title = 'Custos';
     component.value = 'R$ 50,00';
     component.trend = { value: 3.2, isPositive: false, label: 'aumento de despesa' };
@@ -47,10 +44,19 @@ describe('StatCardComponent', () => {
 
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.textContent).toContain('-3.2%');
+    expect(compiled.querySelector('.text-state-danger')).not.toBeNull();
+  });
 
-    // Semantic token class applied by ngClass for negative trend
-    const badgeEl = compiled.querySelector('.bg-state-danger-subtle');
-    expect(badgeEl).not.toBeNull();
+  it('não deve colorir variações neutras como ganho ou perda', () => {
+    component.title = 'Cotações';
+    component.value = 42;
+    component.trend = { value: 0, isPositive: true, tone: 'neutral' };
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.textContent).toContain('0%');
+    expect(compiled.querySelector('.text-content-muted')).not.toBeNull();
+    expect(compiled.querySelector('.text-state-success')).toBeNull();
   });
 
   it('deve exibir o subtítulo quando fornecido', () => {

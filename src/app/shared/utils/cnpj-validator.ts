@@ -8,6 +8,19 @@ export function stripCnpj(value: string): string {
   return value.replace(/\D/g, '');
 }
 
+/** Canonical form used for comparisons and persistence. */
+export function normalizeCnpj(value: string): string {
+  return stripCnpj(value);
+}
+
+/** Builds a formatted, checksum-valid CNPJ from any 12-digit base. */
+export function buildCnpj(base: string): string {
+  const digits = stripCnpj(base).padEnd(12, '0').slice(0, 12);
+  const first = checkDigit(digits, 12);
+  const second = checkDigit(`${digits}${first}`, 13);
+  return formatCnpj(`${digits}${first}${second}`);
+}
+
 /**
  * Validates a CNPJ string (with or without mask).
  * Returns `true` if valid, `false` otherwise.

@@ -3,129 +3,108 @@
 @tailwind utilities;
 
 // ─────────────────────────────────────────────────────────────────
-// Google Fonts — Inter + JetBrains Mono
-// ─────────────────────────────────────────────────────────────────
-
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
-
-// ─────────────────────────────────────────────────────────────────
-// Design Tokens — Semantic CSS Custom Properties
-// Aligned with tailwind.config.js semantic token hierarchy
+// Design tokens — "Mesa de operações"
+// Light is the default; .dark on <html> overrides.
 // ─────────────────────────────────────────────────────────────────
 
 :root {
-  // Typography
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --font-sans: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
 
-  // Brand — Cobalto Elétrico
-  --color-brand:           #2563eb;
-  --color-brand-hover:     #3b82f6;
-  --color-brand-active:    #1d4ed8;
-  --color-brand-subtle:    rgba(37, 99, 235, 0.12);
-  --color-brand-secondary: #38bdf8;
+  --color-brand: #2563eb;
+  --color-brand-fill: #1d4ed8;
+  --color-brand-fill-hover: #1e40af;
+  --color-brand-subtle: rgba(37, 99, 235, 0.1);
 
-  // ── LIGHT MODE defaults (app is light-first) ────────────────────────
-  // Canvas & Surfaces
-  --color-canvas:          #f8fafc;
-  --color-canvas-base:     #f8fafc;
-  --color-canvas-surface:  #ffffff;
-  --color-canvas-elevated: #f1f5f9;
+  --color-canvas: #f5f6f7;
+  --color-canvas-base: #f5f6f7;
+  --color-canvas-surface: #ffffff;
+  --color-canvas-elevated: #edeff2;
 
-  // Borders
-  --color-border-subtle:   #e2e8f0;
-  --color-border-strong:   #cbd5e1;
-  --color-border-hover:    #2563eb;
+  --color-border-subtle: #dce0e5;
+  --color-border-strong: #bfc6cf;
+  --color-border-hover: #2563eb;
 
-  // Content / Typography
-  --color-content-primary:  #0f172a;
-  --color-content-muted:    #64748b;
-  --color-content-disabled: #94a3b8;
+  --color-content-primary: #14181f;
+  --color-content-muted: #58616f;
+  --color-content-disabled: #8a94a3;
 
-  // State — Operational Semantics
-  --color-state-success:        #10b981;
-  --color-state-success-subtle: rgba(16, 185, 129, 0.12);
-  --color-state-warning:        #f59e0b;
-  --color-state-warning-subtle: rgba(245, 158, 11, 0.12);
-  --color-state-danger:         #ef4444;
-  --color-state-danger-subtle:  rgba(239, 68, 68, 0.12);
-  --color-state-info:           #0284c7;
-  --color-state-info-subtle:    rgba(2, 132, 199, 0.12);
+  --color-state-success: #0f7a5a;
+  --color-state-success-subtle: rgba(15, 122, 90, 0.1);
+  --color-state-success-border: rgba(15, 122, 90, 0.24);
+  --color-state-warning: #9a5b00;
+  --color-state-warning-subtle: rgba(154, 91, 0, 0.1);
+  --color-state-warning-border: rgba(154, 91, 0, 0.24);
+  --color-state-danger: #b42318;
+  --color-state-danger-subtle: rgba(180, 35, 24, 0.1);
+  --color-state-danger-border: rgba(180, 35, 24, 0.24);
+  --color-state-info: #0b6e99;
+  --color-state-info-subtle: rgba(11, 110, 153, 0.1);
+  --color-state-info-border: rgba(11, 110, 153, 0.24);
 
-  // Focus ring
   --color-focus-ring: #2563eb;
+  --color-overlay: rgb(9 11 15 / 0.72);
 
-  // Spacing (4px modular scale — reference only, use Tailwind classes directly)
-  --spacing-1:  0.25rem;  // 4px
-  --spacing-2:  0.5rem;   // 8px
-  --spacing-3:  0.75rem;  // 12px
-  --spacing-4:  1rem;     // 16px
-  --spacing-6:  1.5rem;   // 24px
-  --spacing-8:  2rem;     // 32px
-  --spacing-12: 3rem;     // 48px  — table row height
-  --spacing-16: 4rem;     // 64px  — topbar height
+  --radius-control: 6px;
+  --radius-panel: 8px;
+  --radius-overlay: 10px;
 
-  // Border Radius
-  --radius-sm:   0.25rem;
-  --radius-md:   0.5rem;
-  --radius-lg:   0.75rem;
-  --radius-xl:   1rem;
-  --radius-full: 9999px;
+  --shadow-overlay: 0 24px 48px -12px rgb(0 0 0 / 0.28), 0 8px 16px -8px rgb(0 0 0 / 0.16);
 
-  // Transitions
-  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-base: 250ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-slow: 350ms cubic-bezier(0.4, 0, 0.2, 1);
+  --motion-fast: 120ms;
+  --motion-base: 160ms;
+  --motion-drawer: 220ms;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
 
-  // Elevation Shadows (light-optimised)
-  --shadow-elevation-1: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.04);
-  --shadow-elevation-2: 0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.06);
-  --shadow-elevation-3: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.08);
+  --spacing-1: 0.25rem;
+  --spacing-2: 0.5rem;
+  --spacing-3: 0.75rem;
+  --spacing-4: 1rem;
+  --spacing-6: 1.5rem;
+  --spacing-8: 2rem;
+  --spacing-12: 3rem;
+  --spacing-16: 4rem;
 }
-
-// ─────────────────────────────────────────────────────────────────
-// Dark Mode Token Overrides — activated by `.dark` on <html>
-// ─────────────────────────────────────────────────────────────────
 
 .dark {
-  --color-canvas:          #09090b;
-  --color-canvas-base:     #09090b;
-  --color-canvas-surface:  #11141b;
-  --color-canvas-elevated: #181d27;
+  --color-canvas: #0c0f14;
+  --color-canvas-base: #0c0f14;
+  --color-canvas-surface: #12161d;
+  --color-canvas-elevated: #1a2029;
 
-  --color-border-subtle:   #222734;
-  --color-border-strong:   #333b4f;
-  --color-border-hover:    #2563eb;
+  --color-border-subtle: #242c37;
+  --color-border-strong: #36414f;
+  --color-border-hover: #7aa2ff;
 
-  --color-content-primary:  #f8fafc;
-  --color-content-muted:    #94a3b8;
-  --color-content-disabled: #475569;
+  --color-content-primary: #f2f4f7;
+  --color-content-muted: #a3adbb;
+  --color-content-disabled: #6b7686;
 
-  --shadow-elevation-1: 0 1px 3px 0 rgb(0 0 0 / 0.12), 0 1px 2px -1px rgb(0 0 0 / 0.12);
-  --shadow-elevation-2: 0 4px 6px -1px rgb(0 0 0 / 0.18), 0 2px 4px -2px rgb(0 0 0 / 0.12);
-  --shadow-elevation-3: 0 10px 15px -3px rgb(0 0 0 / 0.2), 0 4px 6px -4px rgb(0 0 0 / 0.15);
+  --color-brand: #7aa2ff;
+  --color-brand-fill: #2f5bea;
+  --color-brand-fill-hover: #3c68f2;
+  --color-brand-subtle: rgba(122, 162, 255, 0.14);
 
-  background-color: var(--color-canvas-base);
-  color: var(--color-content-primary);
+  --color-state-success: #4fc3a1;
+  --color-state-success-subtle: rgba(79, 195, 161, 0.1);
+  --color-state-success-border: rgba(79, 195, 161, 0.24);
+  --color-state-warning: #f0b35b;
+  --color-state-warning-subtle: rgba(240, 179, 91, 0.1);
+  --color-state-warning-border: rgba(240, 179, 91, 0.24);
+  --color-state-danger: #f87171;
+  --color-state-danger-subtle: rgba(248, 113, 113, 0.1);
+  --color-state-danger-border: rgba(248, 113, 113, 0.24);
+  --color-state-info: #5cc8e8;
+  --color-state-info-subtle: rgba(92, 200, 232, 0.1);
+  --color-state-info-border: rgba(92, 200, 232, 0.24);
+
+  --color-focus-ring: #7aa2ff;
+  --color-overlay: rgb(2 4 8 / 0.78);
+  --shadow-overlay: 0 24px 48px -12px rgb(0 0 0 / 0.56), 0 8px 16px -8px rgb(0 0 0 / 0.4);
 }
 
-
-
-// ─────────────────────────────────────────────────────────────────
-// Global Base Reset
-// ─────────────────────────────────────────────────────────────────
-
-*,
-*::before,
-*::after {
+*, *::before, *::after {
   box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-  // Smooth theming transition for Light/Dark mode toggle
-  transition:
-    background-color 0.3s ease,
-    border-color 0.3s ease,
-    color 0.3s ease;
 }
 
 html {
@@ -135,65 +114,151 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-
-  // Force dark canvas as the global default (app is dark-first by design)
   background-color: var(--color-canvas-base);
   color: var(--color-content-primary);
 }
 
 body {
+  min-height: 100dvh;
   background-color: var(--color-canvas-base);
   color: var(--color-content-primary);
-  min-height: 100dvh;
+  font-size: 14px;
+  line-height: 21px;
 }
 
-// ─────────────────────────────────────────────────────────────────
-// Accessibility: Focus Ring (brand cobalt)
-// ─────────────────────────────────────────────────────────────────
+button, input, select, textarea {
+  font: inherit;
+}
 
 :focus-visible {
   outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
 }
 
-// ─────────────────────────────────────────────────────────────────
-// Custom Scrollbar (webkit — matches dark canvas palette)
-// ─────────────────────────────────────────────────────────────────
-
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+::selection {
+  background: var(--color-brand-subtle);
 }
 
-::-webkit-scrollbar-track {
-  background: var(--color-canvas-surface);
-}
-
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
   background: var(--color-border-strong);
-  border-radius: var(--radius-full);
+  border-radius: 9999px;
+  border: 2px solid var(--color-canvas-base);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--color-content-disabled); }
 
-  &:hover {
-    background: var(--color-brand);
+cdk-virtual-scroll-viewport { scrollbar-gutter: stable; }
+
+@layer components {
+  .ui-btn {
+    @apply inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-md border px-3 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+    border-color: var(--color-border-strong);
+    background: var(--color-canvas-surface);
+    color: var(--color-content-primary);
+  }
+  .ui-btn:hover:not(:disabled) { background: var(--color-canvas-elevated); }
+  .ui-btn:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: 2px; }
+
+  .ui-btn-primary {
+    border-color: transparent;
+    background: var(--color-brand-fill);
+    color: #fff;
+  }
+  .ui-btn-primary:hover:not(:disabled) { background: var(--color-brand-fill-hover); }
+  .dark .ui-btn-primary { color: #fff; }
+
+  .ui-btn-ghost {
+    border-color: transparent;
+    background: transparent;
+    color: var(--color-content-muted);
+  }
+  .ui-btn-ghost:hover:not(:disabled) {
+    background: var(--color-canvas-elevated);
+    color: var(--color-content-primary);
+  }
+
+  .ui-btn-danger {
+    border-color: transparent;
+    background: var(--color-state-danger);
+    color: #fff;
+  }
+  .ui-btn-danger:hover:not(:disabled) { filter: brightness(0.92); }
+
+  .ui-icon-btn {
+    @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-transparent text-content-muted transition-colors hover:bg-canvas-elevated hover:text-content-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  .ui-field {
+    @apply h-9 w-full rounded-md border border-border-strong bg-canvas-surface px-3 text-sm text-content-primary placeholder:text-content-disabled focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .ui-label {
+    @apply mb-1.5 block text-xs font-medium text-content-muted;
+  }
+
+  .ui-panel {
+    @apply rounded-lg border border-border-subtle bg-canvas-surface;
+  }
+
+  .ui-toolbar {
+    @apply flex flex-wrap items-center gap-2 border-b border-border-subtle px-4 py-2.5;
+  }
+
+  .ui-manifest {
+    @apply flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs text-content-muted;
+  }
+
+  .ui-kpi {
+    @apply flex min-w-0 flex-col gap-1;
+  }
+
+  .ui-table {
+    @apply w-full border-collapse text-sm;
+  }
+  .ui-table thead th {
+    @apply h-9 border-b border-border-subtle px-3 text-left text-xs font-medium text-content-muted;
+  }
+  .ui-table tbody td {
+    @apply h-11 border-b border-border-subtle px-3 align-middle;
+  }
+  .ui-table tbody tr:last-child td { @apply border-b-0; }
+  .ui-table tbody tr { @apply transition-colors; }
+  .ui-table tbody tr:hover { background: var(--color-canvas-elevated); }
+
+  .ui-status {
+    @apply inline-flex items-center gap-1.5 rounded border px-1.5 py-0.5 text-[11px] font-medium leading-4 whitespace-nowrap;
+  }
+
+  .ui-skeleton {
+    @apply rounded border border-border-subtle;
+    background: var(--color-canvas-elevated);
+  }
+
+  .ui-scrim {
+    background: var(--color-overlay);
+  }
+
+  .ui-overline {
+    @apply text-xs font-medium text-content-muted;
   }
 }
 
-// ─────────────────────────────────────────────────────────────────
-// CDK Virtual Scroll — prevent scrollbar double-overlap
-// ─────────────────────────────────────────────────────────────────
+.app-sidebar { width: 280px; }
 
-cdk-virtual-scroll-viewport {
-  scrollbar-gutter: stable;
+@media (min-width: 1024px) {
+  .app-sidebar { width: 240px; }
+  .app-sidebar.sidebar-collapsed { width: 64px; }
+  .sidebar-collapsed .sidebar-label { display: none; }
+  .sidebar-collapsed .sidebar-version-compact { display: inline; }
+  .sidebar-collapsed .sidebar-header { justify-content: center; }
+  .sidebar-collapsed .sidebar-brand { display: none; }
+  .sidebar-collapsed .sidebar-toggle { margin-left: 0; }
+  .sidebar-collapsed nav a { justify-content: center; padding-left: 0; padding-right: 0; }
 }
 
-// ─────────────────────────────────────────────────────────────────
-// Accessibility: Reduced Motion
-// ─────────────────────────────────────────────────────────────────
-
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;

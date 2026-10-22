@@ -95,13 +95,9 @@ interface AgingBucket {
             />
           </button>
 
-          <button
-            type="button"
-            (click)="openModal()"
-            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand hover:bg-brand-hover text-white font-medium text-xs shadow-brand-glow transition-colors focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-canvas-base"
-          >
+          <button type="button" (click)="openModal()" class="ui-btn ui-btn-primary">
             <lucide-icon [img]="PlusIcon" [size]="16" />
-            <span>Novo Lançamento</span>
+            Novo Lançamento
           </button>
         </div>
       </div>
@@ -205,13 +201,15 @@ interface AgingBucket {
       <div class="p-4 rounded-xl border border-border-subtle bg-canvas-surface backdrop-blur-md flex flex-wrap items-center justify-between gap-4">
         <!-- Search Input -->
         <div class="relative flex-1 min-w-60">
-          <lucide-icon [img]="SearchIcon" [size]="16" class="absolute left-3 top-1/2 -translate-y-1/2 text-content-disabled" />
+          <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-content-disabled">
+            <lucide-icon [img]="SearchIcon" [size]="16" />
+          </span>
           <input
             type="search"
             [ngModel]="searchQuery()"
             (ngModelChange)="onSearchChange($event)"
             placeholder="Buscar por descrição ou parceiro B2B..."
-            class="w-full pl-9 pr-4 py-2 rounded-lg bg-canvas-elevated border border-border-subtle text-xs text-content-primary placeholder-content-disabled focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors"
+            class="w-full pl-10 pr-4 py-2 rounded-lg bg-canvas-elevated border border-border-subtle text-xs text-content-primary placeholder-content-disabled focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors"
             aria-label="Buscar transações financeiras"
           />
         </div>
@@ -245,7 +243,7 @@ interface AgingBucket {
             <button
               type="button"
               (click)="clearFilters()"
-              class="px-3 py-2 rounded-lg text-xs font-medium text-state-danger hover:bg-state-danger-subtle border border-state-danger transition-colors"
+              class="px-3 py-2 rounded-lg text-xs font-medium text-state-danger hover:bg-state-danger-subtle border border-state-danger-border transition-colors"
             >
               Limpar Filtros
             </button>
@@ -258,7 +256,7 @@ interface AgingBucket {
         <!-- 1. ERROR STATE -->
         @if (treasuryStore.error()) {
           <div
-            class="p-4 rounded-lg bg-state-danger-subtle border border-state-danger flex items-center justify-between gap-4 text-state-danger"
+            class="p-4 rounded-lg bg-state-danger-subtle border border-state-danger-border flex items-center justify-between gap-4 text-state-danger"
             role="alert"
             aria-live="assertive"
           >
@@ -456,7 +454,7 @@ export class TreasuryComponent implements OnInit {
    * Relies on the globally decoupled store.aging() response.
    */
   protected readonly agingBuckets = computed<readonly AgingBucket[]>(() => {
-    const sum = (arr: TreasuryTransaction[] | undefined): number =>
+    const sum = (arr: readonly TreasuryTransaction[] | undefined): number =>
       arr ? arr.reduce((acc, t) => acc + t.amount, 0) : 0;
 
     const aging = this.treasuryStore.aging();
@@ -471,7 +469,7 @@ export class TreasuryComponent implements OnInit {
         description: 'Contas com vencimento já ultrapassado',
         colorClass: 'text-state-danger',
         bgClass: 'bg-state-danger-subtle',
-        borderClass: 'border-state-danger',
+        borderClass: 'border-state-danger-border',
         transactions: overdue,
         total: sum(overdue),
       },
@@ -480,7 +478,7 @@ export class TreasuryComponent implements OnInit {
         description: 'Vencimento no dia de hoje',
         colorClass: 'text-state-warning',
         bgClass: 'bg-state-warning-subtle',
-        borderClass: 'border-state-warning',
+        borderClass: 'border-state-warning-border',
         transactions: today,
         total: sum(today),
       },
@@ -489,7 +487,7 @@ export class TreasuryComponent implements OnInit {
         description: 'Vencimento nos próximos 7 dias',
         colorClass: 'text-state-info',
         bgClass: 'bg-state-info-subtle',
-        borderClass: 'border-state-info',
+        borderClass: 'border-state-info-border',
         transactions: next7,
         total: sum(next7),
       },
@@ -498,7 +496,7 @@ export class TreasuryComponent implements OnInit {
         description: 'Vencimento nos próximos 8 a 30 dias',
         colorClass: 'text-state-success',
         bgClass: 'bg-state-success-subtle',
-        borderClass: 'border-state-success',
+        borderClass: 'border-state-success-border',
         transactions: next30,
         total: sum(next30),
       },

@@ -2,770 +2,773 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
-  inject,
+  OnDestroy,
   OnInit,
+  computed,
+  inject,
   signal,
 } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
-import { FormsModule } from '@angular/forms';
-import { ScrollingModule } from '@angular/cdk/scrolling';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { Subject } from 'rxjs';
-import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import {
-  LucideAngularModule,
-  Plus,
-  Search,
-  Filter,
-  RefreshCw,
-  Edit2,
-  Trash2,
-  AlertTriangle,
-  PackageX,
   AlertCircle,
-  Download,
-  ArrowUpDown,
-  ArrowUp,
   ArrowDown,
-  CheckSquare,
-  Square,
-  Undo2,
+  ArrowUp,
+  ArrowUpDown,
+  Download,
+  Edit2,
+  History,
+  LucideAngularModule,
+  Package,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2,
 } from 'lucide-angular';
-
-import { InventoryStore } from './data-access/inventory.store';
-import { ProductModalComponent } from './ui/product-modal.component';
-import { StatCardComponent } from '@/shared/ui/stat-card/stat-card.component';
-import { BadgeComponent } from '@/shared/ui/badge/badge.component';
+import {
+  INVENTORY_CATEGORIES,
+  INVENTORY_CATEGORY_LABELS,
+  INVENTORY_STATUSES,
+  INVENTORY_STATUS_LABELS,
+  type InventoryCategory,
+  type InventoryFilter,
+  type InventoryItem,
+  type InventoryStatus,
+} from '@/core/models/inventory.model';
+import type { StockMovementResult } from '@/core/models/stock-movement.model';
+import { WAREHOUSES } from '@/core/models/warehouse.model';
+import { InventoryStore } from '@/features/inventory/data-access/inventory.store';
+import { BadgeComponent, type BadgeVariant } from '@/shared/ui/badge/badge.component';
+import { ConfirmDialogComponent } from '@/shared/ui/confirm-dialog/confirm-dialog.component';
 import { SkeletonLoaderComponent } from '@/shared/ui/skeleton/skeleton-loader.component';
 import { ToastService } from '@/shared/ui/toast/toast.service';
-import { exportToCsv } from '@/shared/utils/csv-exporter';
-import type {
-  InventoryCategory,
-  InventoryItem,
-  InventoryStatus,
-} from '@/core/models/inventory.model';
-
-type SortableColumn = 'sku' | 'name' | 'quantity' | 'unitPrice' | 'status' | 'updatedAt';
+import { formatBrl } from '@/shared/utils/currency-formatter';
+import { exportInventoryCsv } from '@/shared/utils/inventory-csv';
+import { MovementHistoryDrawerComponent } from './ui/movement-history.drawer';
+import { MovementModalComponent } from './ui/movement-modal.component';
+import { ProductModalComponent } from './ui/product-modal.component';
 
 @Component({
   selector: 'app-inventory',
   standalone: true,
   imports: [
-    CommonModule,
-    FormsModule,
-    ScrollingModule,
     LucideAngularModule,
-    StatCardComponent,
     BadgeComponent,
+    ConfirmDialogComponent,
     SkeletonLoaderComponent,
     ProductModalComponent,
+    MovementModalComponent,
+    MovementHistoryDrawerComponent,
   ],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="space-y-6">
-      <!-- Section Header -->
-      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <section class="space-y-4">
+      <header class="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 class="text-2xl font-bold text-content-primary tracking-tight">
-            Gestão de Estoque Multi-Armazém
-          </h1>
-          <p class="text-xs text-content-muted mt-1">
-            Controle integrado de inventário reativo em tempo real via Dexie.js (Virtual Scroll @angular/cdk)
+          <h1 class="text-[22px] font-semibold leading-8 tracking-tight text-content-primary">Estoque</h1>
+          <p class="mt-0.5 max-w-[62ch] text-sm text-content-muted">
+            Saldos por armazém, mínimo de segurança e histórico auditável de cada SKU.
           </p>
         </div>
+        <button type="button" class="ui-btn ui-btn-primary" (click)="openCreate()">
+          <lucide-icon [img]="Plus" [size]="16" />
+          Novo produto
+        </button>
+      </header>
 
-        <div class="flex items-center gap-3">
-          <!-- Export CSV Button -->
-          <button
-            type="button"
-            (click)="exportCsv()"
-            class="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border-subtle bg-canvas-surface text-content-muted hover:text-content-primary hover:bg-canvas-elevated text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-brand"
-            title="Exportar dados filtrados para CSV"
-            aria-label="Exportar inventário para CSV"
-          >
-            <lucide-icon [img]="DownloadIcon" [size]="16" />
-            <span class="hidden sm:inline">Exportar CSV</span>
-          </button>
+      <div class="ui-panel grid grid-cols-2 divide-y divide-border-subtle sm:grid-cols-4 sm:divide-y-0 sm:divide-x" role="region" aria-label="Indicadores de estoque">
+        <div class="px-4 py-3">
+          <p class="text-xs text-content-muted">Valor em estoque</p>
+          <p class="mt-1 font-mono text-2xl font-medium tabular-nums text-content-primary">{{ formatCompactCurrency(store.totalStockValue()) }}</p>
+          <p class="mt-0.5 text-xs text-content-muted">{{ formatCompactNumber(store.totalUnits()) }} unidades</p>
+        </div>
+        <div class="px-4 py-3">
+          <p class="text-xs text-content-muted">SKUs ativos</p>
+          <p class="mt-1 font-mono text-2xl font-medium tabular-nums text-content-primary">{{ store.summary()?.totalSkus ?? '—' }}</p>
+          <p class="mt-0.5 text-xs text-content-muted">5 armazéns</p>
+        </div>
+        <div class="px-4 py-3">
+          <p class="text-xs text-content-muted">Abaixo do mínimo</p>
+          <p class="mt-1 font-mono text-2xl font-medium tabular-nums" [class]="store.lowStockCount() > 0 ? 'text-state-warning' : 'text-content-primary'">{{ store.lowStockCount() }}</p>
+          <p class="mt-0.5 text-xs text-content-muted">{{ store.outOfStockCount() }} zerados</p>
+        </div>
+        <div class="px-4 py-3">
+          <p class="text-xs text-content-muted">Movimentações (30 d)</p>
+          <p class="mt-1 font-mono text-2xl font-medium tabular-nums text-content-primary">{{ store.movementsLast30Days() }}</p>
+          <p class="mt-0.5 text-xs text-content-muted">{{ lastMovementLabel() }}</p>
+        </div>
+      </div>
 
-          <button
-            type="button"
-            (click)="reloadItems()"
-            class="p-2 rounded-lg border border-border-subtle bg-canvas-surface text-content-muted hover:text-content-primary hover:bg-canvas-elevated transition-colors focus-visible:ring-2 focus-visible:ring-brand"
-            title="Atualizar dados localmente"
-            aria-label="Recarregar inventário"
-          >
-            <lucide-icon
-              [img]="RefreshCwIcon"
-              [size]="18"
-              [ngClass]="{ 'animate-spin': inventoryStore.loading() }"
+      <div class="ui-panel overflow-hidden">
+        <div class="ui-toolbar">
+          <label class="relative min-w-0 flex-1 sm:max-w-[300px]">
+            <span class="sr-only">Buscar produtos</span>
+            <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-content-muted">
+              <lucide-icon [img]="Search" [size]="16" />
+            </span>
+            <input
+              type="search"
+              class="ui-field pl-10"
+              placeholder="SKU ou nome do produto"
+              [value]="searchInput()"
+              (input)="onSearch($event)"
             />
-          </button>
+          </label>
 
-          <button
-            type="button"
-            (click)="openModalForCreate()"
-            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand hover:bg-brand-hover text-white font-medium text-xs shadow-brand-glow transition-colors focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-canvas-base"
-          >
-            <lucide-icon [img]="PlusIcon" [size]="16" />
-            <span>Novo Produto</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- KPI Summary Cards -->
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <app-stat-card
-          title="Total de SKUs Cadastrados"
-          [value]="inventoryStore.totalItems()"
-          subtitle="Itens catalogados na base IndexedDB"
-          iconName="Package"
-        />
-
-        <app-stat-card
-          title="Itens Baixo Estoque"
-          [value]="inventoryStore.lowStockCount()"
-          subtitle="Abaixo do limite mínimo de segurança"
-          iconName="AlertTriangle"
-        />
-
-        <app-stat-card
-          title="Valor Total em Estoque"
-          [value]="'R$ ' + (inventoryStore.totalStockValue() | number:'1.2-2':'pt-BR')"
-          subtitle="Avaliação acumulada do ativo"
-          iconName="Wallet"
-        />
-      </div>
-
-      <!-- Filter Controls Bar -->
-      <div class="p-4 rounded-xl border border-border-subtle bg-canvas-surface backdrop-blur-md flex flex-wrap items-center justify-between gap-4">
-        <!-- Debounced Search Input -->
-        <div class="relative flex-1 min-w-60">
-          <lucide-icon [img]="SearchIcon" [size]="16" class="absolute left-3 top-1/2 -translate-y-1/2 text-content-disabled" />
-          <input
-            type="search"
-            [ngModel]="searchQuery()"
-            (ngModelChange)="onSearchInputChange($event)"
-            placeholder="Buscar por nome do produto ou SKU (debounce 300ms)…"
-            class="w-full pl-9 pr-4 py-2 rounded-lg bg-canvas-elevated border border-border-subtle text-xs text-content-primary placeholder-content-disabled focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors"
-            aria-label="Buscar produtos em estoque"
-          />
-        </div>
-
-        <!-- Filter Selects -->
-        <div class="flex flex-wrap items-center gap-3">
-          <select
-            [ngModel]="selectedCategory()"
-            (ngModelChange)="onCategoryChange($event)"
-            class="px-3 py-2 rounded-lg bg-canvas-elevated border border-border-subtle text-xs text-content-primary focus:outline-none focus:border-brand transition-colors"
-            aria-label="Filtrar por categoria"
-          >
-            <option value="ALL">Todas as Categorias</option>
-            <option value="ELECTRONICS">Eletrônicos</option>
-            <option value="HARDWARE">Hardware</option>
-            <option value="LOGISTICS">Logística</option>
-            <option value="OFFICE">Escritório</option>
+          <select class="ui-field w-auto min-w-[145px]" aria-label="Filtrar por categoria" (change)="onCategory($event)">
+            <option value="ALL" [selected]="store.filters().category === null">Todas as categorias</option>
+            @for (category of categories; track category) {
+              <option [value]="category" [selected]="store.filters().category === category">{{ categoryLabels[category] }}</option>
+            }
           </select>
 
-          <select
-            [ngModel]="selectedStatus()"
-            (ngModelChange)="onStatusChange($event)"
-            class="px-3 py-2 rounded-lg bg-canvas-elevated border border-border-subtle text-xs text-content-primary focus:outline-none focus:border-brand transition-colors"
-            aria-label="Filtrar por status"
-          >
-            <option value="ALL">Todos os Status</option>
-            <option value="IN_STOCK">Em Estoque</option>
-            <option value="LOW_STOCK">Estoque Baixo</option>
-            <option value="OUT_OF_STOCK">Sem Estoque</option>
+          <select class="ui-field w-auto min-w-[130px]" aria-label="Filtrar por status" (change)="onStatus($event)">
+            <option value="ALL" [selected]="store.filters().status === null">Todos os status</option>
+            @for (status of statuses; track status) {
+              <option [value]="status" [selected]="store.filters().status === status">{{ statusLabels[status] }}</option>
+            }
           </select>
 
-          @if (inventoryStore.hasActiveFilters()) {
-            <button
-              type="button"
-              (click)="clearFilters()"
-              class="px-3 py-2 rounded-lg text-xs font-medium text-state-danger hover:bg-state-danger-subtle border border-state-danger transition-colors"
-            >
-              Limpar Filtros
+          <select class="ui-field w-auto min-w-[170px]" aria-label="Filtrar por armazém" (change)="onWarehouse($event)">
+            <option value="ALL" [selected]="store.filters().warehouseId === null">Todos os armazéns</option>
+            @for (warehouse of warehouses; track warehouse.id) {
+              <option [value]="warehouse.id" [selected]="store.filters().warehouseId === warehouse.id">{{ warehouse.name }} · {{ warehouse.state }}</option>
+            }
+          </select>
+
+          @if (store.hasActiveFilters()) {
+            <button type="button" class="ui-btn h-9 border-transparent px-2 text-xs text-content-muted" (click)="clearFilters()">
+              Limpar filtros
             </button>
           }
+
+          <button type="button" class="ui-btn ml-auto" [disabled]="exporting()" (click)="exportAll()">
+            <lucide-icon [img]="Download" [size]="15" />
+            <span class="hidden sm:inline">{{ exporting() ? 'Exportando…' : 'Exportar' }}</span>
+          </button>
         </div>
-      </div>
 
-      <!-- Bulk Action Bar -->
-      @if (inventoryStore.selectionCount() > 0) {
-        <div
-          class="flex items-center justify-between px-4 py-3 rounded-xl border border-brand/30 bg-brand-subtle text-xs font-medium animate-in slide-in-from-top-2 duration-200"
-          role="status"
-          aria-live="polite"
-        >
-          <span class="text-brand">
-            {{ inventoryStore.selectionCount() }} item(s) selecionado(s)
-          </span>
-          <div class="flex items-center gap-3">
-            <button
-              type="button"
-              (click)="inventoryStore.clearSelection()"
-              class="text-content-muted hover:text-content-primary transition-colors"
-            >
-              Cancelar seleção
+        @if (store.selectionCount() > 0) {
+          <div class="flex flex-wrap items-center gap-2 border-b border-border-subtle bg-brand-subtle px-4 py-2" role="status">
+            <span class="text-sm font-medium text-content-primary">{{ store.selectionCount() }} selecionados</span>
+            <button type="button" class="ui-btn h-8 px-2.5 text-xs" [disabled]="exporting()" (click)="exportSelection()">
+              <lucide-icon [img]="Download" [size]="14" /> Exportar seleção
             </button>
-            <button
-              type="button"
-              (click)="bulkDelete()"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-state-danger text-white hover:opacity-90 transition-opacity focus-visible:ring-2 focus-visible:ring-state-danger"
-            >
-              <lucide-icon [img]="Trash2Icon" [size]="14" />
-              Excluir Selecionados
+            <button type="button" class="ui-btn h-8 border-transparent px-2.5 text-xs text-state-danger hover:bg-state-danger-subtle" (click)="bulkDeleteOpen.set(true)">
+              <lucide-icon [img]="Trash2" [size]="14" /> Excluir seleção
+            </button>
+            <button type="button" class="ui-btn ml-auto h-8 border-transparent px-2 text-xs text-content-muted" (click)="store.clearSelection()">
+              Limpar seleção
             </button>
           </div>
+        }
+
+        <div class="ui-manifest border-b border-border-subtle px-4 py-2">
+          <span>{{ manifestCount() }}</span>
+          <span aria-hidden="true">·</span>
+          <span>{{ store.activeFilterCount() }} {{ store.activeFilterCount() === 1 ? 'filtro ativo' : 'filtros ativos' }}</span>
+          <span aria-hidden="true">·</span>
+          <span>{{ lastMovementLabel() }}</span>
         </div>
-      }
 
-      <!-- 4 STATES PATTERN CONTAINER -->
-      <div class="p-6 rounded-xl border border-border-subtle bg-canvas-surface backdrop-blur-md">
-
-        <!-- 1. ERROR STATE -->
-        @if (inventoryStore.error()) {
-          <div
-            class="p-4 rounded-lg bg-state-danger-subtle border border-state-danger flex items-center justify-between gap-4 text-state-danger"
-            role="alert"
-            aria-live="assertive"
-          >
-            <div class="flex items-center gap-3">
-              <lucide-icon [img]="AlertCircleIcon" [size]="20" class="shrink-0" />
-              <div>
-                <h4 class="text-xs font-bold uppercase tracking-wider">Falha no Carregamento</h4>
-                <p class="text-xs mt-0.5 text-state-danger/80">{{ inventoryStore.error() }}</p>
-              </div>
+        @if (store.loading()) {
+          <div class="p-4">
+            <app-skeleton-loader [count]="7" height="2.75rem" />
+          </div>
+        } @else if (store.error()) {
+          <div class="flex flex-col items-start gap-3 px-4 py-8" role="alert">
+            <div class="flex items-center gap-2 text-sm text-state-danger">
+              <lucide-icon [img]="AlertCircle" [size]="18" />
+              <span>{{ store.error() }}</span>
             </div>
-
-            <button
-              type="button"
-              (click)="reloadItems()"
-              class="px-3 py-1 rounded-lg bg-state-danger text-white font-medium text-xs hover:opacity-90 transition-opacity"
-            >
-              Tentar Novamente
+            <button type="button" class="ui-btn" (click)="store.refresh()">
+              <lucide-icon [img]="RefreshCw" [size]="15" />
+              Tentar novamente
             </button>
           </div>
-        }
-
-        <!-- 2. LOADING STATE (Skeleton) -->
-        @else if (inventoryStore.loading()) {
-          <div class="space-y-3" aria-live="polite">
-            <div class="flex items-center justify-between pb-2 border-b border-border-subtle">
-              <span class="text-xs font-semibold text-content-muted">Carregando inventário…</span>
-            </div>
-            <app-skeleton-loader [count]="8" height="3rem" />
+        } @else if (store.isFilteredEmpty()) {
+          <div class="flex flex-col items-center px-4 py-12 text-center">
+            <h2 class="text-sm font-medium text-content-primary">Nenhum produto para estes filtros</h2>
+            <p class="mt-1 text-sm text-content-muted">Ajuste a busca ou limpe os filtros para ver o catálogo completo.</p>
+            <button type="button" class="ui-btn mt-4" (click)="clearFilters()">Limpar filtros</button>
           </div>
-        }
-
-        <!-- 3. EMPTY STATE -->
-        @else if (inventoryStore.items().length === 0) {
-          <div class="py-16 flex flex-col items-center justify-center text-center space-y-4">
-            <div class="w-16 h-16 rounded-full bg-canvas-elevated border border-border-strong flex items-center justify-center text-content-muted shadow-elevation-1">
-              <lucide-icon [img]="PackageXIcon" [size]="32" />
-            </div>
-            <div>
-              <h3 class="text-base font-bold text-content-primary">Nenhum produto encontrado</h3>
-              <p class="text-xs text-content-muted mt-1 max-w-sm">
-                Não existem itens que coincidam com os filtros aplicados ou a base de estoque está vazia.
-              </p>
-            </div>
-            <button
-              type="button"
-              (click)="clearFilters()"
-              class="px-4 py-2 rounded-lg bg-brand hover:bg-brand-hover text-white text-xs font-medium transition-colors"
-            >
-              Restaurar Filtros de Busca
+        } @else if (store.isEmpty()) {
+          <div class="flex flex-col items-center px-4 py-12 text-center">
+            <span class="flex h-10 w-10 items-center justify-center rounded-full bg-canvas-elevated text-content-muted">
+              <lucide-icon [img]="Package" [size]="20" />
+            </span>
+            <h2 class="mt-3 text-sm font-medium text-content-primary">Nenhum produto cadastrado</h2>
+            <p class="mt-1 max-w-[40ch] text-sm text-content-muted">Cadastre o primeiro SKU e registre a entrada inicial para começar.</p>
+            <button type="button" class="ui-btn ui-btn-primary mt-4" (click)="openCreate()">
+              <lucide-icon [img]="Plus" [size]="15" /> Cadastrar produto
             </button>
           </div>
-        }
-
-        <!-- 4. SUCCESS / DATA STATE — CDK Virtual Scroll Viewport -->
-        @else {
-          <div class="flex flex-col space-y-2">
-            <!-- Table Header with sortable columns -->
-            <div class="grid grid-cols-12 gap-4 px-4 py-3 border-b border-border-subtle text-content-muted uppercase font-semibold tracking-wider text-[11px]">
-              <!-- Checkbox All -->
-              <div class="col-span-1 flex items-center">
-                <button
-                  type="button"
-                  (click)="inventoryStore.selectAll()"
-                  class="p-0.5 rounded text-content-muted hover:text-brand transition-colors focus-visible:ring-2 focus-visible:ring-brand"
-                  [attr.aria-label]="inventoryStore.isAllSelected() ? 'Desmarcar todos' : 'Selecionar todos'"
-                  [title]="inventoryStore.isAllSelected() ? 'Desmarcar todos' : 'Selecionar todos'"
-                >
-                  <lucide-icon
-                    [img]="inventoryStore.isAllSelected() ? CheckSquareIcon : SquareIcon"
-                    [size]="16"
-                    [class.text-brand]="inventoryStore.isAllSelected()"
-                  />
-                </button>
-              </div>
-
-              <!-- SKU sortable -->
-              <div class="col-span-2">
-                <button
-                  type="button"
-                  (click)="sortBy('sku')"
-                  class="flex items-center gap-1 hover:text-content-primary transition-colors focus-visible:ring-2 focus-visible:ring-brand rounded"
-                  [attr.aria-sort]="getSortAriaSort('sku')"
-                >
-                  SKU
-                  <lucide-icon [img]="getSortIcon('sku')" [size]="11" />
-                </button>
-              </div>
-
-              <!-- Name sortable -->
-              <div class="col-span-3">
-                <button
-                  type="button"
-                  (click)="sortBy('name')"
-                  class="flex items-center gap-1 hover:text-content-primary transition-colors focus-visible:ring-2 focus-visible:ring-brand rounded"
-                  [attr.aria-sort]="getSortAriaSort('name')"
-                >
-                  Produto
-                  <lucide-icon [img]="getSortIcon('name')" [size]="11" />
-                </button>
-              </div>
-
-              <!-- Category -->
-              <div class="col-span-1">Categoria</div>
-
-              <!-- Quantity sortable -->
-              <div class="col-span-1 text-right">
-                <button
-                  type="button"
-                  (click)="sortBy('quantity')"
-                  class="flex items-center justify-end gap-1 w-full hover:text-content-primary transition-colors focus-visible:ring-2 focus-visible:ring-brand rounded"
-                  [attr.aria-sort]="getSortAriaSort('quantity')"
-                >
-                  Qtd
-                  <lucide-icon [img]="getSortIcon('quantity')" [size]="11" />
-                </button>
-              </div>
-
-              <!-- Unit Price sortable -->
-              <div class="col-span-2 text-right">
-                <button
-                  type="button"
-                  (click)="sortBy('unitPrice')"
-                  class="flex items-center justify-end gap-1 w-full hover:text-content-primary transition-colors focus-visible:ring-2 focus-visible:ring-brand rounded"
-                  [attr.aria-sort]="getSortAriaSort('unitPrice')"
-                >
-                  Preço Unit.
-                  <lucide-icon [img]="getSortIcon('unitPrice')" [size]="11" />
-                </button>
-              </div>
-
-              <!-- Status sortable -->
-              <div class="col-span-1 text-center">
-                <button
-                  type="button"
-                  (click)="sortBy('status')"
-                  class="flex items-center justify-center gap-1 w-full hover:text-content-primary transition-colors focus-visible:ring-2 focus-visible:ring-brand rounded"
-                  [attr.aria-sort]="getSortAriaSort('status')"
-                >
-                  Status
-                  <lucide-icon [img]="getSortIcon('status')" [size]="11" />
-                </button>
-              </div>
-
-              <!-- Actions -->
-              <div class="col-span-1 text-center">Ações</div>
-            </div>
-
-            <!-- Virtual Scroll Viewport — itemSize=48 matches h-12 (3rem) row height -->
-            <cdk-virtual-scroll-viewport
-              itemSize="48"
-              class="h-[600px] w-full overflow-y-auto"
-              style="contain: strict;"
-              (scrolledIndexChange)="onScrolledIndexChange($event)"
-            >
-              <div
-                *cdkVirtualFor="let item of inventoryStore.items(); trackBy: trackByItemId"
-                class="grid grid-cols-12 gap-4 px-4 py-2 h-12 border-b border-border-subtle hover:bg-canvas-elevated text-xs items-center transition-colors"
-                [class.bg-brand-subtle]="isSelected(item.id)"
-                [class.border-brand]="isSelected(item.id)"
-              >
-                <!-- Checkbox -->
-                <div class="col-span-1 flex items-center">
-                  <button
-                    type="button"
-                    (click)="inventoryStore.toggleSelect(item.id)"
-                    class="p-0.5 rounded text-content-disabled hover:text-brand transition-colors focus-visible:ring-2 focus-visible:ring-brand"
-                    [attr.aria-label]="'Selecionar ' + item.name"
-                    [attr.aria-checked]="isSelected(item.id)"
-                    role="checkbox"
-                  >
-                    <lucide-icon
-                      [img]="isSelected(item.id) ? CheckSquareIcon : SquareIcon"
-                      [size]="15"
-                      [class.text-brand]="isSelected(item.id)"
+        } @else {
+          <div class="hidden overflow-x-auto lg:block">
+            <table class="ui-table">
+              <caption class="sr-only">Produtos em estoque com saldo, mínimo, preço e status</caption>
+              <thead>
+                <tr>
+                  <th scope="col" class="w-10">
+                    <input
+                      type="checkbox"
+                      class="h-4 w-4 rounded border-border-strong accent-brand"
+                      aria-label="Selecionar todos os produtos exibidos"
+                      [checked]="store.isAllSelected()"
+                      [indeterminate]="store.selectionCount() > 0 && !store.isAllSelected()"
+                      (change)="toggleAll()"
                     />
-                  </button>
-                </div>
-
-                <!-- SKU — monospaced per spec -->
-                <div class="col-span-2 font-mono font-medium text-brand truncate" [title]="item.sku">
-                  {{ item.sku }}
-                </div>
-
-                <!-- Product Name -->
-                <div class="col-span-3 font-medium text-content-primary truncate" [title]="item.name">
-                  {{ item.name }}
-                </div>
-
-                <!-- Category -->
-                <div class="col-span-1 text-content-muted truncate">
-                  {{ item.category }}
-                </div>
-
-                <!-- Quantity — monospaced per spec -->
-                <div class="col-span-1 text-right font-mono font-medium text-content-primary">
-                  {{ item.quantity }}
-                </div>
-
-                <!-- Unit Price — monospaced per spec -->
-                <div class="col-span-2 text-right font-mono text-content-muted">
-                  R$ {{ item.unitPrice | number:'1.2-2':'pt-BR' }}
-                </div>
-
-                <!-- Status Badge -->
-                <div class="col-span-1 flex justify-center">
-                  @switch (item.status) {
-                    @case ('IN_STOCK') {
-                      <app-badge variant="SUCCESS" label="EM ESTOQUE" />
-                    }
-                    @case ('LOW_STOCK') {
-                      <app-badge variant="WARNING" label="BAIXO" />
-                    }
-                    @case ('OUT_OF_STOCK') {
-                      <app-badge variant="DANGER" label="ZERADO" />
-                    }
-                  }
-                </div>
-
-                <!-- Actions -->
-                <div class="col-span-1 flex items-center justify-center gap-2">
-                  <button
-                    type="button"
-                    (click)="openModalForEdit(item)"
-                    class="p-1 rounded text-content-muted hover:text-brand hover:bg-brand-subtle transition-colors focus-visible:ring-2 focus-visible:ring-brand"
-                    [title]="'Editar ' + item.name"
-                  >
-                    <lucide-icon [img]="Edit2Icon" [size]="15" />
-                  </button>
-
-                  <button
-                    type="button"
-                    (click)="deleteItem(item)"
-                    class="p-1 rounded text-content-muted hover:text-state-danger hover:bg-state-danger-subtle transition-colors focus-visible:ring-2 focus-visible:ring-state-danger"
-                    [title]="'Remover ' + item.name"
-                  >
-                    <lucide-icon [img]="Trash2Icon" [size]="15" />
-                  </button>
-                </div>
-              </div>
-            </cdk-virtual-scroll-viewport>
-
-            <!-- Table Footer -->
-            <div class="flex items-center justify-between pt-3 text-xs text-content-muted border-t border-border-subtle px-2">
-              <span>Exibindo {{ inventoryStore.items().length }} de {{ inventoryStore.totalItems() }} produtos</span>
-              <span class="font-mono text-[11px] text-content-disabled">Virtual Scroll CDK • 60 FPS</span>
-            </div>
-
-            <!-- Loading More Indicator -->
-            @if (inventoryStore.loadingMore()) {
-              <div
-                class="flex items-center justify-center gap-2 py-3 text-xs text-content-muted"
-                aria-live="polite"
-              >
-                <span class="inline-block w-3 h-3 rounded-full border-2 border-brand border-t-transparent animate-spin" aria-hidden="true"></span>
-                Carregando mais itens…
-              </div>
-            } @else if (!inventoryStore.hasMoreItems() && inventoryStore.items().length > 0) {
-              <div class="flex items-center justify-center py-3 text-[11px] text-content-disabled">
-                Todos os {{ inventoryStore.totalItems() }} registros exibidos.
-              </div>
-            }
+                  </th>
+                  <th scope="col" [attr.aria-sort]="ariaSort('name')">
+                    <button type="button" class="inline-flex items-center gap-1 hover:text-content-primary" (click)="sortBy('name')">
+                      Produto <lucide-icon [img]="sortIcon('name')" [size]="12" />
+                    </button>
+                  </th>
+                  <th scope="col">Categoria</th>
+                  <th scope="col">Armazém</th>
+                  <th scope="col" class="text-right" [attr.aria-sort]="ariaSort('quantity')">
+                    <button type="button" class="inline-flex items-center gap-1 hover:text-content-primary" (click)="sortBy('quantity')">
+                      Saldo <lucide-icon [img]="sortIcon('quantity')" [size]="12" />
+                    </button>
+                  </th>
+                  <th scope="col" class="text-right">Mínimo</th>
+                  <th scope="col" class="text-right" [attr.aria-sort]="ariaSort('unitPrice')">
+                    <button type="button" class="inline-flex items-center gap-1 hover:text-content-primary" (click)="sortBy('unitPrice')">
+                      Preço <lucide-icon [img]="sortIcon('unitPrice')" [size]="12" />
+                    </button>
+                  </th>
+                  <th scope="col" [attr.aria-sort]="ariaSort('status')">
+                    <button type="button" class="inline-flex items-center gap-1 hover:text-content-primary" (click)="sortBy('status')">
+                      Status <lucide-icon [img]="sortIcon('status')" [size]="12" />
+                    </button>
+                  </th>
+                  <th scope="col" class="w-28 text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (item of store.items(); track item.id) {
+                  <tr>
+                    <td>
+                      <input
+                        type="checkbox"
+                        class="h-4 w-4 rounded border-border-strong accent-brand"
+                        [attr.aria-label]="'Selecionar ' + item.name"
+                        [checked]="isSelected(item.id)"
+                        (change)="store.toggleSelection(item.id)"
+                      />
+                    </td>
+                    <td class="max-w-[280px]">
+                      <button type="button" class="block max-w-full truncate text-left text-sm font-medium text-content-primary hover:text-brand" [title]="item.name" (click)="openHistory(item)">
+                        {{ item.name }}
+                      </button>
+                      <span class="block font-mono text-[11px] leading-4 text-content-muted">{{ item.sku }}</span>
+                    </td>
+                    <td class="whitespace-nowrap text-xs text-content-muted">{{ categoryLabels[item.category] }}</td>
+                    <td class="text-xs text-content-muted">
+                      <span class="block">{{ warehouseName(item.warehouseId) }}</span>
+                      <span class="block font-mono text-[10px] text-content-disabled">{{ item.warehouseId }}</span>
+                    </td>
+                    <td class="text-right font-mono text-xs tabular-nums" [class]="item.quantity === 0 ? 'text-state-danger' : 'text-content-primary'">{{ item.quantity }}</td>
+                    <td class="text-right font-mono text-xs tabular-nums text-content-muted">{{ item.minThreshold }}</td>
+                    <td class="text-right font-mono text-xs tabular-nums text-content-primary">{{ formatCurrency(item.unitPrice) }}</td>
+                    <td>
+                      <app-badge [variant]="statusVariant(item.status)" [label]="statusLabels[item.status]" />
+                    </td>
+                    <td>
+                      <div class="flex justify-end gap-0.5">
+                        <button type="button" class="ui-icon-btn h-8 w-8" [attr.aria-label]="'Ver histórico de ' + item.name" title="Histórico" (click)="openHistory(item)">
+                          <lucide-icon [img]="History" [size]="15" />
+                        </button>
+                        <button type="button" class="ui-icon-btn h-8 w-8" [attr.aria-label]="'Editar ' + item.name" title="Editar" (click)="openEdit(item)">
+                          <lucide-icon [img]="Edit2" [size]="15" />
+                        </button>
+                        <button type="button" class="ui-icon-btn h-8 w-8 hover:text-state-danger" [attr.aria-label]="'Excluir ' + item.name" title="Excluir" (click)="deleteItem(item)">
+                          <lucide-icon [img]="Trash2" [size]="15" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
           </div>
+
+          <ul class="divide-y divide-border-subtle lg:hidden" aria-label="Produtos em estoque">
+            @for (item of store.items(); track item.id) {
+              <li class="p-4">
+                <div class="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    class="mt-1 h-4 w-4 shrink-0 rounded border-border-strong accent-brand"
+                    [attr.aria-label]="'Selecionar ' + item.name"
+                    [checked]="isSelected(item.id)"
+                    (change)="store.toggleSelection(item.id)"
+                  />
+                  <div class="min-w-0 flex-1">
+                    <button type="button" class="block w-full truncate text-left text-sm font-medium text-content-primary hover:text-brand" [title]="item.name" (click)="openHistory(item)">
+                      {{ item.name }}
+                    </button>
+                    <p class="mt-0.5 font-mono text-[11px] text-content-muted">{{ item.sku }} · {{ categoryLabels[item.category] }}</p>
+                  </div>
+                  <app-badge [variant]="statusVariant(item.status)" [label]="statusLabels[item.status]" />
+                </div>
+
+                <div class="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                  <div>
+                    <p class="text-content-muted">Saldo / mínimo</p>
+                    <p class="mt-0.5 font-mono tabular-nums" [class]="item.quantity === 0 ? 'text-state-danger' : 'text-content-primary'">{{ item.quantity }} / {{ item.minThreshold }}</p>
+                  </div>
+                  <div>
+                    <p class="text-content-muted">Preço unitário</p>
+                    <p class="mt-0.5 font-mono tabular-nums text-content-primary">{{ formatCurrency(item.unitPrice) }}</p>
+                  </div>
+                  <div class="col-span-2">
+                    <p class="text-content-muted">Armazém</p>
+                    <p class="mt-0.5 text-content-primary">{{ warehouseName(item.warehouseId) }}</p>
+                    <p class="font-mono text-[10px] text-content-disabled">{{ item.warehouseId }}</p>
+                  </div>
+                </div>
+
+                <div class="mt-3 flex items-center gap-1 border-t border-border-subtle pt-2">
+                  <button type="button" class="ui-btn h-8 border-transparent px-2 text-xs" (click)="openHistory(item)">
+                    <lucide-icon [img]="History" [size]="14" /> Histórico
+                  </button>
+                  <button type="button" class="ui-btn h-8 border-transparent px-2 text-xs" (click)="openEdit(item)">
+                    <lucide-icon [img]="Edit2" [size]="14" /> Editar
+                  </button>
+                  <button type="button" class="ui-btn ml-auto h-8 border-transparent px-2 text-xs text-state-danger" (click)="deleteItem(item)">
+                    <lucide-icon [img]="Trash2" [size]="14" /> Excluir
+                  </button>
+                </div>
+              </li>
+            }
+          </ul>
+
+          @if (store.hasMore()) {
+            <div class="flex justify-center border-t border-border-subtle px-4 py-3">
+              <button type="button" class="ui-btn" [disabled]="store.loadingMore()" (click)="loadMore()">
+                {{ store.loadingMore() ? 'Carregando…' : 'Carregar mais produtos' }}
+              </button>
+            </div>
+          }
         }
       </div>
+    </section>
 
-      <!-- Modal Component for Create / Edit -->
-      @if (isModalOpen()) {
-        <app-product-modal
-          [itemToEdit]="selectedItemForEdit()"
-          (close)="closeModal()"
-          (save)="onSaveProduct($event)"
-        />
-      }
-    </div>
+    <app-product-modal
+      [open]="productOpen()"
+      [item]="productItem()"
+      (closed)="closeProduct()"
+      (saved)="handleProductSaved($event)"
+      (movementRequested)="handleProductMovementRequested($event)"
+    />
+
+    <app-movement-modal
+      [open]="movementOpen()"
+      [item]="movementItem()"
+      (closed)="closeMovement()"
+      (saved)="handleMovementSaved($event)"
+    />
+
+    <app-movement-history-drawer
+      [open]="historyOpen()"
+      [item]="historyItem()"
+      (closed)="closeHistory()"
+      (movementRequested)="handleDrawerMovement($event)"
+    />
+
+    <app-confirm-dialog
+      [open]="bulkDeleteOpen()"
+      title="Excluir produtos selecionados"
+      [message]="bulkMessage()"
+      confirmLabel="Excluir produtos"
+      tone="danger"
+      [busy]="bulkBusy()"
+      (cancelled)="bulkDeleteOpen.set(false)"
+      (confirmed)="confirmBulkDelete()"
+    />
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class InventoryComponent implements OnInit {
-  protected readonly inventoryStore = inject(InventoryStore);
-  private readonly toastService = inject(ToastService);
-  private readonly destroyRef = inject(DestroyRef);
+export class InventoryComponent implements OnInit, OnDestroy {
+  protected readonly store = inject(InventoryStore);
   private readonly route = inject(ActivatedRoute);
+  private readonly toast = inject(ToastService);
+  private readonly destroyRef = inject(DestroyRef);
 
-  protected readonly PlusIcon = Plus;
-  protected readonly SearchIcon = Search;
-  protected readonly FilterIcon = Filter;
-  protected readonly RefreshCwIcon = RefreshCw;
-  protected readonly Edit2Icon = Edit2;
-  protected readonly Trash2Icon = Trash2;
-  protected readonly AlertTriangleIcon = AlertTriangle;
-  protected readonly PackageXIcon = PackageX;
-  protected readonly AlertCircleIcon = AlertCircle;
-  protected readonly DownloadIcon = Download;
-  protected readonly ArrowUpDownIcon = ArrowUpDown;
-  protected readonly ArrowUpIcon = ArrowUp;
-  protected readonly ArrowDownIcon = ArrowDown;
-  protected readonly CheckSquareIcon = CheckSquare;
-  protected readonly SquareIcon = Square;
-  protected readonly Undo2Icon = Undo2;
+  protected readonly categories = INVENTORY_CATEGORIES;
+  protected readonly categoryLabels = INVENTORY_CATEGORY_LABELS;
+  protected readonly statuses = INVENTORY_STATUSES;
+  protected readonly statusLabels = INVENTORY_STATUS_LABELS;
+  protected readonly warehouses = WAREHOUSES;
+  protected readonly formatCurrency = formatBrl;
 
-  protected readonly searchQuery = signal('');
-  protected readonly selectedCategory = signal<InventoryCategory | 'ALL'>('ALL');
-  protected readonly selectedStatus = signal<InventoryStatus | 'ALL'>('ALL');
+  protected readonly Plus = Plus;
+  protected readonly Search = Search;
+  protected readonly Download = Download;
+  protected readonly Trash2 = Trash2;
+  protected readonly History = History;
+  protected readonly Edit2 = Edit2;
+  protected readonly Package = Package;
+  protected readonly AlertCircle = AlertCircle;
+  protected readonly RefreshCw = RefreshCw;
+  protected readonly ArrowUp = ArrowUp;
+  protected readonly ArrowDown = ArrowDown;
+  protected readonly ArrowUpDown = ArrowUpDown;
 
-  protected readonly isModalOpen = signal(false);
-  protected readonly selectedItemForEdit = signal<InventoryItem | null>(null);
+  protected readonly searchInput = signal('');
+  protected readonly productOpen = signal(false);
+  protected readonly productItem = signal<InventoryItem | null>(null);
+  protected readonly movementOpen = signal(false);
+  protected readonly movementItem = signal<InventoryItem | null>(null);
+  protected readonly historyOpen = signal(false);
+  protected readonly historyItem = signal<InventoryItem | null>(null);
+  protected readonly bulkDeleteOpen = signal(false);
+  protected readonly bulkBusy = signal(false);
+  protected readonly exporting = signal(false);
 
-  /** Debounce pipeline — dispatches search only after 300ms idle, skipping duplicates */
-  private readonly searchSubject = new Subject<string>();
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
+  private returnToHistory = false;
+
+  protected readonly lastMovementLabel = computed(() => {
+    const value = this.store.lastMovementAt();
+    if (!value) return 'sem movimentações';
+    const diff = Date.now() - new Date(value).getTime();
+    if (!Number.isFinite(diff) || diff < 0) return 'agora';
+    const minutes = Math.floor(diff / 60_000);
+    if (minutes < 1) return 'última agora';
+    if (minutes < 60) return `última há ${minutes} min`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `última há ${hours} h`;
+    const days = Math.floor(hours / 24);
+    return `última há ${days} d`;
+  });
+
+  protected readonly manifestCount = computed(() => {
+    const total = this.store.totalItems();
+    const summaryTotal = this.store.summary()?.totalSkus;
+    if (this.store.hasActiveFilters() && summaryTotal !== undefined) {
+      return `${total} de ${summaryTotal} SKUs`;
+    }
+    return `${summaryTotal ?? total} SKUs`;
+  });
+
+  protected readonly bulkMessage = computed(
+    () =>
+      `${this.store.selectionCount()} ${this.store.selectionCount() === 1 ? 'produto será removido' : 'produtos serão removidos'} do catálogo. O histórico de movimentações é preservado e a exclusão pode ser desfeita pelo aviso.`
+  );
 
   ngOnInit(): void {
-    if (this.inventoryStore.items().length === 0) {
-      this.inventoryStore.loadItems();
+    const params = this.route.snapshot.queryParamMap;
+    const search = params.get('search') ?? '';
+    const status = params.get('status');
+    const category = params.get('category');
+    const warehouseId = params.get('warehouseId');
+
+    const validStatus =
+      status && INVENTORY_STATUSES.includes(status as InventoryStatus)
+        ? (status as InventoryStatus)
+        : null;
+    const validCategory =
+      category && INVENTORY_CATEGORIES.includes(category as InventoryCategory)
+        ? (category as InventoryCategory)
+        : null;
+    const validWarehouse =
+      warehouseId && WAREHOUSES.some((warehouse) => warehouse.id === warehouseId)
+        ? warehouseId
+        : null;
+
+    if (search || validStatus || validCategory || validWarehouse) {
+      const partial: Partial<InventoryFilter> = {
+        search,
+        status: validStatus,
+        category: validCategory,
+        warehouseId: validWarehouse,
+      };
+      if (search) this.searchInput.set(search);
+      void this.store.setFilters(partial);
+    } else {
+      void this.store.load();
     }
-
-    this.searchSubject
-      .pipe(
-        debounceTime(300),
-        distinctUntilChanged(),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe((query) => {
-        this.inventoryStore.setFilters({ search: query, page: 1 });
-      });
-
-    // Open modal automatically if ?action=new query param is present
-    this.route.queryParams
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((params) => {
-        if (params['action'] === 'new') {
-          this.isModalOpen.set(true);
-          this.selectedItemForEdit.set(null);
-        }
-      });
   }
 
-  protected trackByItemId(_index: number, item: InventoryItem): string {
-    return item.id;
+  ngOnDestroy(): void {
+    if (this.searchTimer) clearTimeout(this.searchTimer);
   }
 
-  protected isSelected(id: string): boolean {
-    return this.inventoryStore.selectedIds().includes(id);
+  protected onSearch(event: Event): void {
+    const value = (event.target as HTMLInputElement).value;
+    this.searchInput.set(value);
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    this.searchTimer = setTimeout(() => {
+      this.searchTimer = null;
+      void this.store.setFilters({ search: value });
+    }, 300);
   }
 
-  protected onSearchInputChange(query: string): void {
-    this.searchQuery.set(query);
-    this.searchSubject.next(query);
+  protected onCategory(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    void this.store.setFilters({ category: value === 'ALL' ? null : (value as InventoryCategory) });
   }
 
-  protected onCategoryChange(category: InventoryCategory | 'ALL'): void {
-    this.selectedCategory.set(category);
-    this.inventoryStore.setFilters({
-      category: category === 'ALL' ? null : category,
-      page: 1,
-    });
+  protected onStatus(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    void this.store.setFilters({ status: value === 'ALL' ? null : (value as InventoryStatus) });
   }
 
-  protected onStatusChange(status: InventoryStatus | 'ALL'): void {
-    this.selectedStatus.set(status);
-    this.inventoryStore.setFilters({
-      status: status === 'ALL' ? null : status,
-      page: 1,
-    });
+  protected onWarehouse(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    void this.store.setFilters({ warehouseId: value === 'ALL' ? null : value });
   }
 
   protected clearFilters(): void {
-    this.searchQuery.set('');
-    this.selectedCategory.set('ALL');
-    this.selectedStatus.set('ALL');
-    this.inventoryStore.resetFilters();
-    this.inventoryStore.loadItems();
-  }
-
-  protected reloadItems(): void {
-    this.inventoryStore.loadItems();
-    this.toastService.info('Estoque', 'Dados recarregados da base Dexie.js.');
-  }
-
-  protected openModalForCreate(): void {
-    this.selectedItemForEdit.set(null);
-    this.isModalOpen.set(true);
-  }
-
-  protected openModalForEdit(item: InventoryItem): void {
-    this.selectedItemForEdit.set(item);
-    this.isModalOpen.set(true);
-  }
-
-  protected closeModal(): void {
-    this.isModalOpen.set(false);
-    this.selectedItemForEdit.set(null);
-  }
-
-  protected async onSaveProduct(
-    productData: Omit<InventoryItem, 'id' | 'updatedAt' | 'status'>
-  ): Promise<void> {
-    const editItem = this.selectedItemForEdit();
-
-    function deriveStatus(quantity: number, minThreshold: number): InventoryStatus {
-      if (quantity === 0) return 'OUT_OF_STOCK';
-      if (quantity <= minThreshold) return 'LOW_STOCK';
-      return 'IN_STOCK';
+    if (this.searchTimer) {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = null;
     }
-
-    const status = deriveStatus(productData.quantity, productData.minThreshold);
-
-    if (editItem) {
-      await this.inventoryStore.updateItem(editItem.id, {
-        ...productData,
-        status,
-      });
-      this.toastService.success(
-        'Produto Atualizado',
-        `O item "${productData.name}" foi atualizado com sucesso.`
-      );
-    } else {
-      await this.inventoryStore.addItem({
-        ...productData,
-        status,
-        updatedAt: new Date(),
-      });
-      this.toastService.success(
-        'Produto Criado',
-        `O item "${productData.name}" foi adicionado ao estoque.`
-      );
-    }
-
-    this.closeModal();
+    this.searchInput.set('');
+    void this.store.resetFilters();
   }
 
-  /** Optimistic delete with 5-second undo toast */
-  protected deleteItem(item: InventoryItem): void {
-    const removed = this.inventoryStore.optimisticDeleteItem(item.id);
-    if (!removed) return;
-
-    const toastId = this.toastService.warning(
-      'Produto Removido',
-      `"${item.name}" foi excluído.`,
-      5000
-    );
-
-    // Show undo option using a second toast-like approach via console (simplified)
-    // The undo is exposed via a button action attached to the toast
-    this.showUndoToast(removed, toastId);
+  protected sortBy(column: keyof InventoryItem): void {
+    void this.store.setSortBy(column);
   }
 
-  private showUndoToast(item: InventoryItem, _originalToastId: string): void {
-    // We remove the previous warning toast and replace with one that has undo action
-    this.toastService.remove(_originalToastId);
-
-    // Show a persistent action toast with Undo — leverages the extended show method
-    const undoId = this.toastService.show({
-      type: 'WARNING',
-      title: 'Produto Removido',
-      message: `"${item.name}" foi excluído. Clique em Desfazer para restaurar.`,
-      duration: 0, // manual dismiss
-    });
-
-    // Auto-dismiss after 5s and clean up
-    const timer = setTimeout(() => {
-      this.toastService.remove(undoId);
-    }, 5000);
-
-    // Expose undo globally for the toast action (callback pattern)
-    const undoKey = `undo-${undoId}`;
-    (window as unknown as Record<string, unknown>)[undoKey] = () => {
-      clearTimeout(timer);
-      this.toastService.remove(undoId);
-      this.inventoryStore.restoreItem(item);
-      this.toastService.success('Ação Desfeita', `"${item.name}" foi restaurado.`);
-      delete (window as unknown as Record<string, unknown>)[undoKey];
-    };
+  protected warehouseName(id: string): string {
+    return WAREHOUSES.find((warehouse) => warehouse.id === id)?.name ?? id;
   }
 
-  protected async bulkDelete(): Promise<void> {
-    const count = this.inventoryStore.selectionCount();
-    await this.inventoryStore.bulkDeleteSelected();
-    this.toastService.warning(
-      'Exclusão em Lote',
-      `${count} item(s) removido(s) do estoque.`
-    );
-  }
-
-  /** Sorts the table by the given column, toggling ASC/DESC. */
-  protected sortBy(column: SortableColumn): void {
-    this.inventoryStore.setSortBy(column);
-    this.inventoryStore.loadItems();
-  }
-
-  /** Returns the Lucide sort icon for the given column */
-  protected getSortIcon(column: SortableColumn): typeof ArrowUpDown {
-    const filters = this.inventoryStore.filters();
-    if (filters.sortBy !== column) return this.ArrowUpDownIcon;
-    return filters.sortOrder === 'asc' ? this.ArrowUpIcon : this.ArrowDownIcon;
-  }
-
-  /** Returns the ARIA sort attribute value for the given column */
-  protected getSortAriaSort(column: SortableColumn): 'ascending' | 'descending' | 'none' {
-    const filters = this.inventoryStore.filters();
+  protected ariaSort(column: keyof InventoryItem): 'ascending' | 'descending' | 'none' {
+    const filters = this.store.filters();
     if (filters.sortBy !== column) return 'none';
     return filters.sortOrder === 'asc' ? 'ascending' : 'descending';
   }
 
-  /**
-   * CDK Virtual Scroll event — fires when the first visible index changes.
-   * Triggers `loadMoreItems()` when the user is within 10 rows of the last loaded item.
-   */
-  protected onScrolledIndexChange(index: number): void {
-    const items = this.inventoryStore.items();
-    if (items.length === 0) return;
-    if (index + 15 >= items.length) {
-      this.inventoryStore.loadMoreItems();
+  protected sortIcon(column: keyof InventoryItem): typeof ArrowUp {
+    const filters = this.store.filters();
+    if (filters.sortBy !== column) return ArrowUpDown;
+    return filters.sortOrder === 'asc' ? ArrowUp : ArrowDown;
+  }
+
+  protected toggleAll(): void {
+    if (this.store.isAllSelected()) {
+      this.store.clearSelection();
+    } else {
+      this.store.selectAllLoaded();
     }
   }
 
-  /** Exports visible (filtered) inventory items to CSV */
-  protected exportCsv(): void {
-    const items = this.inventoryStore.items();
-    const date = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
+  protected isSelected(id: string): boolean {
+    return this.store.selectedIds().includes(id);
+  }
 
-    exportToCsv(
-      items as unknown as Record<string, unknown>[],
-      `estoque-${date}`,
-      {
-        sku: 'SKU',
-        name: 'Produto',
-        category: 'Categoria',
-        warehouseId: 'Armazém',
-        quantity: 'Quantidade',
-        minThreshold: 'Estoque Mínimo',
-        unitPrice: 'Preço Unit. (R$)',
-        status: 'Status',
-        updatedAt: 'Atualizado Em',
+  protected loadMore(): void {
+    void this.store.loadMoreItems();
+  }
+
+  protected openCreate(): void {
+    this.productItem.set(null);
+    this.productOpen.set(true);
+  }
+
+  protected openEdit(item: InventoryItem): void {
+    this.productItem.set(item);
+    this.productOpen.set(true);
+  }
+
+  protected closeProduct(): void {
+    this.productOpen.set(false);
+    this.productItem.set(null);
+  }
+
+  protected handleProductSaved(item: InventoryItem): void {
+    const editing = this.productItem() !== null;
+    this.closeProduct();
+    this.toast.success(
+      editing ? 'Produto atualizado' : 'Produto cadastrado',
+      `${item.sku} · ${item.name}`
+    );
+  }
+
+  protected handleProductMovementRequested(item: InventoryItem): void {
+    this.closeProduct();
+    this.openMovement(item);
+  }
+
+  protected openMovement(item: InventoryItem, returnToHistory = false): void {
+    this.returnToHistory = returnToHistory;
+    if (returnToHistory) this.historyOpen.set(false);
+    this.movementItem.set(item);
+    this.movementOpen.set(true);
+  }
+
+  protected closeMovement(): void {
+    this.movementOpen.set(false);
+    this.movementItem.set(null);
+    if (this.returnToHistory) {
+      this.returnToHistory = false;
+      this.historyOpen.set(true);
+    }
+  }
+
+  protected handleMovementSaved(result: StockMovementResult): void {
+    const item = result.item;
+    const title =
+      result.movement.type === 'IN'
+        ? 'Entrada registrada'
+        : result.movement.type === 'OUT'
+          ? 'Saída registrada'
+          : 'Ajuste registrado';
+
+    this.movementOpen.set(false);
+    this.movementItem.set(null);
+    this.historyItem.set(item);
+
+    this.toast.show({
+      type: result.movement.type === 'OUT' ? 'INFO' : result.movement.type === 'ADJUSTMENT' ? 'WARNING' : 'SUCCESS',
+      title,
+      message: `${item.sku} · saldo ${result.movement.previousQuantity} → ${result.movement.newQuantity}`,
+    });
+
+    if (this.returnToHistory) {
+      this.returnToHistory = false;
+      this.historyOpen.set(true);
+    }
+  }
+
+  protected openHistory(item: InventoryItem): void {
+    this.historyItem.set(item);
+    this.historyOpen.set(true);
+  }
+
+  protected closeHistory(): void {
+    this.historyOpen.set(false);
+    this.historyItem.set(null);
+  }
+
+  protected handleDrawerMovement(item: InventoryItem): void {
+    this.openMovement(item, true);
+  }
+
+  protected async deleteItem(item: InventoryItem): Promise<void> {
+    try {
+      const removed = await this.store.deleteItem(item.id);
+      if (this.historyItem()?.id === item.id) this.closeHistory();
+      this.toast.showAction(
+        'INFO',
+        'Produto excluído',
+        `${item.sku} · ${item.name}`,
+        {
+          label: 'Desfazer',
+          run: () => {
+            void this.undoDelete(removed);
+          },
+        }
+      );
+    } catch {
+      this.toast.error('Não foi possível excluir', this.store.error() ?? 'O produto foi restaurado.');
+    }
+  }
+
+  private async undoDelete(item: InventoryItem): Promise<void> {
+    try {
+      await this.store.restoreItem(item);
+      this.toast.success('Produto restaurado', `${item.sku} · ${item.name}`);
+    } catch {
+      this.toast.error('Não foi possível desfazer', 'O SKU pode ter sido recriado nesse intervalo.');
+    }
+  }
+
+  protected async confirmBulkDelete(): Promise<void> {
+    this.bulkBusy.set(true);
+    try {
+      const result = await this.store.bulkDeleteSelected();
+      this.bulkDeleteOpen.set(false);
+      if (result.deleted.length === 0) {
+        this.toast.error('Nenhum produto excluído', 'Tente novamente.');
+        return;
       }
-    );
+      if (result.failed > 0) {
+        this.toast.warning(
+          'Exclusão parcial',
+          `${result.deleted.length} excluídos, ${result.failed} não puderam ser removidos.`
+        );
+      }
+      this.toast.showAction(
+        'INFO',
+        `${result.deleted.length} ${result.deleted.length === 1 ? 'produto excluído' : 'produtos excluídos'}`,
+        'A exclusão pode ser desfeita pelo aviso.',
+        {
+          label: 'Desfazer',
+          run: () => {
+            void this.undoBulkDelete(result.deleted);
+          },
+        }
+      );
+    } catch {
+      this.toast.error('Não foi possível excluir', 'Tente novamente.');
+    } finally {
+      this.bulkBusy.set(false);
+    }
+  }
 
-    this.toastService.success(
-      'CSV Exportado',
-      `Arquivo "estoque-${date}.csv" com ${items.length} linhas gerado.`
+  private async undoBulkDelete(items: readonly InventoryItem[]): Promise<void> {
+    const failed = await this.store.restoreMany(items);
+    if (failed > 0) {
+      this.toast.warning('Restauração parcial', `${failed} produtos não puderam ser restaurados.`);
+      return;
+    }
+    this.toast.success(
+      `${items.length} ${items.length === 1 ? 'produto restaurado' : 'produtos restaurados'}`,
+      'O catálogo voltou ao estado anterior.'
     );
+  }
+
+  protected async exportAll(): Promise<void> {
+    this.exporting.set(true);
+    try {
+      const items = await this.store.fetchAllFiltered();
+      if (items.length === 0) {
+        this.toast.warning('Nada para exportar', 'Nenhum produto corresponde aos filtros atuais.');
+        return;
+      }
+      exportInventoryCsv(items);
+      this.toast.success('Exportação gerada', `${items.length} ${items.length === 1 ? 'produto' : 'produtos'} no CSV.`);
+    } catch {
+      this.toast.error('Não foi possível exportar', 'Tente novamente.');
+    } finally {
+      this.exporting.set(false);
+    }
+  }
+
+  protected exportSelection(): void {
+    const items = this.store.selectedItems();
+    if (items.length === 0) return;
+    exportInventoryCsv(items);
+    this.toast.success('Exportação gerada', `${items.length} ${items.length === 1 ? 'produto' : 'produtos'} no CSV.`);
+  }
+
+  protected statusVariant(status: InventoryStatus): BadgeVariant {
+    if (status === 'IN_STOCK') return 'SUCCESS';
+    if (status === 'LOW_STOCK') return 'WARNING';
+    return 'DANGER';
+  }
+
+  protected formatCompactCurrency(value: number): string {
+    if (value >= 1_000_000) {
+      return `R$ ${(value / 1_000_000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mi`;
+    }
+    if (value >= 1_000) {
+      return `R$ ${(value / 1_000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil`;
+    }
+    return formatBrl(value);
+  }
+
+  protected formatCompactNumber(value: number): string {
+    if (value >= 1_000_000) {
+      return `${(value / 1_000_000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mi`;
+    }
+    if (value >= 1_000) {
+      return `${(value / 1_000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil`;
+    }
+    return value.toLocaleString('pt-BR');
   }
 }
