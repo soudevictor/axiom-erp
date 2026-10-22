@@ -1,11 +1,11 @@
 import type { B2BPartner } from '@/core/models/partner.model';
 import { buildCnpj } from '@/shared/utils/cnpj-validator';
-import { SEED_PARTNERS } from './catalog';
+import { EXTRA_SEED_PARTNERS, SEED_PARTNERS } from './catalog';
 
 const DAY = 86_400_000;
 
 export function buildPartners(now: Date = new Date()): B2BPartner[] {
-  return SEED_PARTNERS.map((definition) => {
+  return [...SEED_PARTNERS, ...EXTRA_SEED_PARTNERS].map((definition) => {
     const createdAt = new Date(now.getTime() - definition.createdAtDaysAgo * DAY).toISOString();
     const updatedAt = new Date(now.getTime() - definition.updatedAtDaysAgo * DAY).toISOString();
 

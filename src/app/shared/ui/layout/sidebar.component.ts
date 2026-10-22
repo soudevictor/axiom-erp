@@ -43,23 +43,29 @@ interface NavItem {
     }
 
     <aside
-      class="app-sidebar fixed inset-y-0 left-0 z-50 flex -translate-x-full flex-col border-r border-border-subtle bg-canvas-surface text-content-muted transition-transform duration-200 ease-out lg:static lg:z-30 lg:translate-x-0"
+      class="app-sidebar fixed inset-y-0 left-0 z-50 flex -translate-x-full flex-col border-r border-border-subtle bg-canvas-surface text-content-muted transition-transform duration-200 ease-out lg:sticky lg:bottom-auto lg:top-0 lg:z-30 lg:h-dvh lg:translate-x-0"
       [class.translate-x-0]="layout.mobileOpen()"
       [class.sidebar-collapsed]="layout.collapsed() && !layout.mobileOpen()"
       [cdkTrapFocus]="layout.mobileOpen()"
       [cdkTrapFocusAutoCapture]="layout.mobileOpen()"
       aria-label="Navegação principal"
     >
-      <div class="flex h-14 shrink-0 items-center gap-2 border-b border-border-subtle px-3">
+      <div class="sidebar-header flex h-14 shrink-0 items-center gap-2 border-b border-border-subtle px-3">
         <a
           routerLink="/dashboard"
-          class="flex min-w-0 items-center gap-2 rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          class="sidebar-brand flex min-w-0 items-center gap-2 rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
           aria-label="AxiomERP — ir para o painel"
         >
-          <img src="logoIcon.svg" alt="" class="h-6 w-6 shrink-0" />
-          <span class="sidebar-label truncate text-[15px] font-semibold tracking-tight text-content-primary">
-            AxiomERP
-          </span>
+          <img
+            src="logo.svg"
+            alt=""
+            class="hidden h-8 w-auto shrink-0 dark:block"
+          />
+          <img
+            src="logoLight.svg"
+            alt=""
+            class="block h-8 w-auto shrink-0 dark:hidden"
+          />
         </a>
 
         <button
@@ -73,7 +79,7 @@ interface NavItem {
 
         <button
           type="button"
-          class="ui-icon-btn ml-auto hidden lg:inline-flex"
+          class="ui-icon-btn sidebar-toggle ml-auto hidden lg:inline-flex"
           [attr.aria-label]="layout.collapsed() ? 'Expandir menu' : 'Recolher menu'"
           [title]="layout.collapsed() ? 'Expandir menu' : 'Recolher menu'"
           (click)="layout.toggleCollapsed()"

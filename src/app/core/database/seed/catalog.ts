@@ -294,6 +294,153 @@ export const SEED_PARTNERS: readonly SeedPartner[] = [
   },
 ];
 
+const EXTRA_PARTNER_BRANDS = [
+  'Aço Norte',
+  'Alvorada',
+  'Bandeirante',
+  'Boreal',
+  'Cerrado',
+  'Cristal',
+  'Delta',
+  'Dourada',
+  'Esmeralda',
+  'Estrela',
+  'Florença',
+  'Fortaleza',
+  'Gaúcha',
+  'Guarani',
+  'Horizonte',
+  'Imperial',
+  'Ipê',
+  'Jacarandá',
+  'Jaguar',
+  'Km Zero',
+  'Litoral',
+  'Lumina',
+  'Mercúrio',
+  'Monte Verde',
+  'Nordeste',
+  'Nova Era',
+  'Oceânica',
+  'Ouro Preto',
+  'Pampa',
+  'Pioneira',
+  'Quartzo',
+  'Quinta',
+  'Real',
+  'Rio Verde',
+  'Serra Azul',
+  'Solaris',
+  'Titan',
+  'Tropical',
+  'Uberaba',
+  'União',
+  'Vale',
+  'Veneza',
+  'Windsor',
+  'Xavier',
+  'Xingu',
+  'Ypiranga',
+  'Zênite',
+  'Zenith',
+  'Aurora',
+  'Ápice',
+] as const;
+
+const EXTRA_PARTNER_SUFFIXES = [
+  'Distribuidora Ltda',
+  'Suprimentos S.A.',
+  'Comércio B2B Ltda',
+  'Logística Integrada Ltda',
+  'Soluções Corporativas Ltda',
+] as const;
+
+const EXTRA_PARTNER_CATEGORIES: readonly PartnerCategory[] = [
+  'FORNECEDOR',
+  'DISTRIBUIDOR',
+  'CLIENTE_DIRETO',
+];
+
+const EXTRA_PARTNER_STATES = ['SP', 'RJ', 'MG', 'PR', 'RS', 'SC', 'BA', 'PE', 'CE', 'GO'] as const;
+
+const EXTRA_PARTNER_AREA_CODES: Record<(typeof EXTRA_PARTNER_STATES)[number], string> = {
+  SP: '11',
+  RJ: '21',
+  MG: '31',
+  PR: '41',
+  RS: '51',
+  SC: '48',
+  BA: '71',
+  PE: '81',
+  CE: '85',
+  GO: '62',
+};
+
+const EXTRA_PARTNER_CONTACTS = [
+  'Ana Beatriz Lima',
+  'Carlos Eduardo Prado',
+  'Daniela Nogueira',
+  'Felipe Andrade',
+  'Gabriela Ribeiro',
+  'Henrique Barbosa',
+  'Isabela Moreira',
+  'João Pedro Castro',
+  'Larissa Mendes',
+  'Rafael Cardoso',
+] as const;
+
+const EXTRA_PARTNER_CREDIT_LIMITS = [120000, 180000, 240000, 320000, 450000, 600000] as const;
+
+function partnerSlug(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function buildExtraPartner(index: number): SeedPartner {
+  const brand = EXTRA_PARTNER_BRANDS[index];
+  const state = EXTRA_PARTNER_STATES[index % EXTRA_PARTNER_STATES.length];
+  const status: PartnerStatus =
+    index % 7 === 0 ? 'BLOQUEADO' : index % 4 === 0 ? 'EM_ANALISE' : 'HOMOLOGADO';
+  const creditLimit = EXTRA_PARTNER_CREDIT_LIMITS[index % EXTRA_PARTNER_CREDIT_LIMITS.length];
+  const usage =
+    status === 'BLOQUEADO'
+      ? 0.9
+      : status === 'EM_ANALISE'
+        ? 0.05 + (index % 3) * 0.05
+        : 0.15 + (index % 7) * 0.1;
+
+  return {
+    id: `PART-${String(index + 13).padStart(3, '0')}`,
+    cnpjBase: String(170000000000 + (index + 1) * 7919),
+    companyName: `${brand} ${EXTRA_PARTNER_SUFFIXES[index % EXTRA_PARTNER_SUFFIXES.length]}`,
+    tradeName: brand,
+    category: EXTRA_PARTNER_CATEGORIES[index % EXTRA_PARTNER_CATEGORIES.length],
+    status,
+    creditLimit,
+    creditUsed: Math.round(creditLimit * usage),
+    state,
+    contactName: EXTRA_PARTNER_CONTACTS[index % EXTRA_PARTNER_CONTACTS.length],
+    email: `contato@${partnerSlug(brand)}.com.br`,
+    phone: `${EXTRA_PARTNER_AREA_CODES[state]}9${String(80000000 + index * 137).padStart(8, '0')}`,
+    statusReason:
+      status === 'BLOQUEADO'
+        ? 'Limite de crédito comprometido; cadastro suspenso para renegociação.'
+        : undefined,
+    createdAtDaysAgo: 30 + ((index * 17) % 900),
+    updatedAtDaysAgo: 1 + ((index * 3) % 25),
+  };
+}
+
+/** 50 additional deterministic partners for high-volume table testing. */
+export const EXTRA_SEED_PARTNERS: readonly SeedPartner[] = EXTRA_PARTNER_BRANDS.map(
+  (_, index) => buildExtraPartner(index)
+);
+
+export const SEED_PARTNER_COUNT = SEED_PARTNERS.length + EXTRA_SEED_PARTNERS.length;
+
 export const INCOME_DESCRIPTIONS = [
   'Recebimento de fatura B2B',
   'Liquidação de pedido corporativo',

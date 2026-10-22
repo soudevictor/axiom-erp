@@ -70,7 +70,7 @@ const DATE_FORMATTER = new Intl.DateTimeFormat('pt-BR', {
           @if (movements.loading()) {
             <app-skeleton-loader [count]="5" height="4rem" />
           } @else if (movements.error()) {
-            <div class="rounded-md border border-state-danger/30 bg-state-danger-subtle p-3" role="alert">
+            <div class="rounded-md border border-state-danger-border bg-state-danger-subtle p-3" role="alert">
               <div class="flex items-center gap-2 text-sm text-state-danger">
                 <lucide-icon [img]="AlertCircle" [size]="16" />
                 <span>{{ movements.error() }}</span>

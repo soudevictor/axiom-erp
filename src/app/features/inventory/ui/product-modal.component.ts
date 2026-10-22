@@ -68,7 +68,7 @@ function errorCode(error: unknown): string | null {
     >
       <form id="product-form" [formGroup]="form" (ngSubmit)="submit()" class="space-y-4">
         @if (serverError()) {
-          <div class="rounded-md border border-state-danger/30 bg-state-danger-subtle px-3 py-2" role="alert">
+          <div class="rounded-md border border-state-danger-border bg-state-danger-subtle px-3 py-2" role="alert">
             <p class="text-sm text-state-danger">{{ serverError() }}</p>
           </div>
         }

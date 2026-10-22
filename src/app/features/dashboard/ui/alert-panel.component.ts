@@ -28,8 +28,8 @@ interface AlertView {
 }
 
 const SEVERITY_CLASSES: Record<Severity, string> = {
-  DANGER: 'border-state-danger/30 bg-state-danger-subtle',
-  WARNING: 'border-state-warning/30 bg-state-warning-subtle',
+  DANGER: 'border-state-danger-border bg-state-danger-subtle',
+  WARNING: 'border-state-warning-border bg-state-warning-subtle',
   NEUTRAL: 'border-border-subtle bg-canvas-elevated',
 };
 

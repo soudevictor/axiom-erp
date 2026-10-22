@@ -31,12 +31,16 @@
 
   --color-state-success: #0f7a5a;
   --color-state-success-subtle: rgba(15, 122, 90, 0.1);
+  --color-state-success-border: rgba(15, 122, 90, 0.24);
   --color-state-warning: #9a5b00;
   --color-state-warning-subtle: rgba(154, 91, 0, 0.1);
+  --color-state-warning-border: rgba(154, 91, 0, 0.24);
   --color-state-danger: #b42318;
   --color-state-danger-subtle: rgba(180, 35, 24, 0.1);
+  --color-state-danger-border: rgba(180, 35, 24, 0.24);
   --color-state-info: #0b6e99;
   --color-state-info-subtle: rgba(11, 110, 153, 0.1);
+  --color-state-info-border: rgba(11, 110, 153, 0.24);
 
   --color-focus-ring: #2563eb;
   --color-overlay: rgb(9 11 15 / 0.72);
@@ -83,12 +87,16 @@
 
   --color-state-success: #4fc3a1;
   --color-state-success-subtle: rgba(79, 195, 161, 0.1);
+  --color-state-success-border: rgba(79, 195, 161, 0.24);
   --color-state-warning: #f0b35b;
   --color-state-warning-subtle: rgba(240, 179, 91, 0.1);
+  --color-state-warning-border: rgba(240, 179, 91, 0.24);
   --color-state-danger: #f87171;
   --color-state-danger-subtle: rgba(248, 113, 113, 0.1);
+  --color-state-danger-border: rgba(248, 113, 113, 0.24);
   --color-state-info: #5cc8e8;
   --color-state-info-subtle: rgba(92, 200, 232, 0.1);
+  --color-state-info-border: rgba(92, 200, 232, 0.24);
 
   --color-focus-ring: #7aa2ff;
   --color-overlay: rgb(2 4 8 / 0.78);
@@ -243,6 +251,10 @@ cdk-virtual-scroll-viewport { scrollbar-gutter: stable; }
   .app-sidebar.sidebar-collapsed { width: 64px; }
   .sidebar-collapsed .sidebar-label { display: none; }
   .sidebar-collapsed .sidebar-version-compact { display: inline; }
+  .sidebar-collapsed .sidebar-header { justify-content: center; }
+  .sidebar-collapsed .sidebar-brand { display: none; }
+  .sidebar-collapsed .sidebar-toggle { margin-left: 0; }
+  .sidebar-collapsed nav a { justify-content: center; padding-left: 0; padding-right: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

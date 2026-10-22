@@ -44,9 +44,10 @@ const ROUTE_NAME_MAP: Record<string, string> = {
   standalone: true,
   imports: [RouterLink, LucideAngularModule, CommandPaletteComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { class: 'sticky top-0 z-30 block' },
   template: `
     <header
-      class="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-border-subtle bg-canvas-base px-3 sm:px-4 lg:px-6"
+      class="flex h-14 shrink-0 items-center gap-2 border-b border-border-subtle bg-canvas-base px-3 sm:px-4 lg:px-6"
     >
       <button
         type="button"

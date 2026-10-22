@@ -102,10 +102,12 @@ import { ProductModalComponent } from './ui/product-modal.component';
         <div class="ui-toolbar">
           <label class="relative min-w-0 flex-1 sm:max-w-[300px]">
             <span class="sr-only">Buscar produtos</span>
-            <lucide-icon [img]="Search" [size]="16" class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-content-muted" />
+            <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-content-muted">
+              <lucide-icon [img]="Search" [size]="16" />
+            </span>
             <input
               type="search"
-              class="ui-field pl-8"
+              class="ui-field pl-10"
               placeholder="SKU ou nome do produto"
               [value]="searchInput()"
               (input)="onSearch($event)"

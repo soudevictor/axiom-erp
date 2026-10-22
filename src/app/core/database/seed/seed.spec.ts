@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { buildSeedBundle } from './seed';
+import { SEED_PARTNER_COUNT } from './catalog';
 import { inventorySeedTotals } from './seed-inventory';
+import { isValidCnpj, normalizeCnpj } from '@/shared/utils/cnpj-validator';
 import { STOCK_MOVEMENT_REASONS } from '@/core/models/stock-movement.model';
 
 const NOW = new Date('2026-10-21T12:00:00.000Z');
@@ -10,7 +12,8 @@ describe('seed determinístico', () => {
 
   it('gera o volume planejado de registros', () => {
     expect(bundle.inventory).toHaveLength(500);
-    expect(bundle.partners).toHaveLength(12);
+    expect(SEED_PARTNER_COUNT).toBe(62);
+    expect(bundle.partners).toHaveLength(SEED_PARTNER_COUNT);
     expect(bundle.transactions).toHaveLength(120);
     expect(bundle.stockMovements.length).toBeGreaterThan(200);
     expect(bundle.stockMovements.length).toBeLessThan(400);
@@ -71,5 +74,12 @@ describe('seed determinístico', () => {
     const blocked = bundle.partners.filter((partner) => partner.status === 'BLOQUEADO');
     expect(blocked.length).toBeGreaterThan(0);
     blocked.forEach((partner) => expect(partner.statusReason?.length ?? 0).toBeGreaterThan(10));
+  });
+
+  it('mantém CNPJs únicos e válidos no volume de teste', () => {
+    const cnpjs = new Set(bundle.partners.map((partner) => normalizeCnpj(partner.cnpj)));
+
+    expect(cnpjs.size).toBe(bundle.partners.length);
+    bundle.partners.forEach((partner) => expect(isValidCnpj(partner.cnpj)).toBe(true));
   });
 });
