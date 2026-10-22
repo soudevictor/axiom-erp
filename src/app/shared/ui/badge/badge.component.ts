@@ -18,11 +18,11 @@ export class BadgeComponent {
   @Input() label?: string;
 
   protected readonly variantClasses: Record<BadgeVariant, string> = {
-    SUCCESS: 'border-state-success/30 bg-state-success-subtle text-state-success',
-    WARNING: 'border-state-warning/30 bg-state-warning-subtle text-state-warning',
-    DANGER: 'border-state-danger/30 bg-state-danger-subtle text-state-danger',
-    INFO: 'border-state-info/30 bg-state-info-subtle text-state-info',
-    NEUTRAL: 'border-border-strong bg-canvas-elevated text-content-muted',
+    SUCCESS: 'border-state-success-border bg-state-success-subtle text-state-success',
+    WARNING: 'border-state-warning-border bg-state-warning-subtle text-state-warning',
+    DANGER: 'border-state-danger-border bg-state-danger-subtle text-state-danger',
+    INFO: 'border-state-info-border bg-state-info-subtle text-state-info',
+    NEUTRAL: 'border-border-subtle bg-canvas-elevated text-content-muted',
   };
 
   protected readonly dotClasses: Record<BadgeVariant, string> = {

@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { PartnersStore } from './partners.store';
+import { PARTNERS_PAGE_SIZE, PartnersStore } from './partners.store';
 import { mockApiInterceptor } from '@/core/interceptors/mock-api.interceptor';
 import { db } from '@/core/database/app-database';
 import type { B2BPartner } from '@/core/models/partner.model';
@@ -65,6 +65,35 @@ describe('PartnersStore', () => {
     await db.partners.add(createPartner({ id: 'PART-003', companyName: 'Novo Parceiro' }));
     await store.refresh();
     expect(store.total()).toBe(3);
+  });
+
+  it('deve paginar a exibição em blocos de 20 com scroll infinito', async () => {
+    await db.partners.bulkAdd(
+      Array.from({ length: 45 }, (_, index) =>
+        createPartner({
+          id: `PART-${String(index + 1).padStart(3, '0')}`,
+          companyName: `Parceiro ${String(index + 1).padStart(2, '0')} Ltda`,
+        })
+      )
+    );
+
+    store = TestBed.inject(PartnersStore);
+    await flush();
+
+    expect(store.filteredTotal()).toBe(45);
+    expect(store.visibleItems()).toHaveLength(PARTNERS_PAGE_SIZE);
+    expect(store.hasMoreItems()).toBe(true);
+
+    store.loadMoreItems();
+    expect(store.visibleItems()).toHaveLength(PARTNERS_PAGE_SIZE * 2);
+
+    store.loadMoreItems();
+    expect(store.visibleItems()).toHaveLength(45);
+    expect(store.hasMoreItems()).toBe(false);
+
+    store.setFilters({ status: 'BLOQUEADO' });
+    expect(store.filteredTotal()).toBe(0);
+    expect(store.visibleItems()).toHaveLength(0);
   });
 
   it('deve combinar busca por CNPJ, categoria, status e UF', async () => {

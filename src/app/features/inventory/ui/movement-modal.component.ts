@@ -135,7 +135,7 @@ const TYPES: readonly StockMovementType[] = ['IN', 'OUT', 'ADJUSTMENT'];
           </div>
 
           @if (serverError()) {
-            <div class="rounded-md border border-state-danger/30 bg-state-danger-subtle px-3 py-2" role="alert">
+            <div class="rounded-md border border-state-danger-border bg-state-danger-subtle px-3 py-2" role="alert">
               <p class="text-sm text-state-danger">{{ serverError() }}</p>
             </div>
           }

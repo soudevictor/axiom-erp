@@ -1,4 +1,16 @@
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import {
+  AfterViewInit,
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  OnDestroy,
+  OnInit,
+  computed,
+  effect,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import {
   AlertCircle,
@@ -89,10 +101,12 @@ const DATE_FORMATTER = new Intl.DateTimeFormat('pt-BR', {
         <div class="ui-toolbar">
           <label class="relative min-w-0 flex-1 sm:max-w-[320px]">
             <span class="sr-only">Buscar parceiros</span>
-            <lucide-icon [img]="Search" [size]="16" class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-content-muted" />
+            <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-content-muted">
+              <lucide-icon [img]="Search" [size]="16" />
+            </span>
             <input
               type="search"
-              class="ui-field pl-8"
+              class="ui-field pl-10"
               placeholder="Nome, CNPJ ou e-mail"
               [value]="store.filters().search"
               (input)="onSearch($event)"
@@ -128,7 +142,7 @@ const DATE_FORMATTER = new Intl.DateTimeFormat('pt-BR', {
         </div>
 
         <div class="ui-manifest border-b border-border-subtle px-4 py-2">
-          <span>{{ store.filteredTotal() }} {{ store.filteredTotal() === 1 ? 'parceiro exibido' : 'parceiros exibidos' }}</span>
+          <span>Exibindo {{ store.visibleItems().length }} de {{ store.filteredTotal() }} {{ store.filteredTotal() === 1 ? 'parceiro' : 'parceiros' }}</span>
           <span aria-hidden="true">·</span>
           <span>{{ store.total() }} no total</span>
           <span aria-hidden="true">·</span>
@@ -185,7 +199,7 @@ const DATE_FORMATTER = new Intl.DateTimeFormat('pt-BR', {
                 </tr>
               </thead>
               <tbody>
-                @for (partner of store.filteredItems(); track partner.id) {
+                @for (partner of store.visibleItems(); track partner.id) {
                   <tr>
                     <td class="max-w-[260px]">
                       <span class="block truncate text-sm font-medium text-content-primary" [title]="partner.companyName">{{ partner.companyName }}</span>
@@ -226,7 +240,7 @@ const DATE_FORMATTER = new Intl.DateTimeFormat('pt-BR', {
           </div>
 
           <ul class="divide-y divide-border-subtle lg:hidden" aria-label="Lista de parceiros">
-            @for (partner of store.filteredItems(); track partner.id) {
+            @for (partner of store.visibleItems(); track partner.id) {
               <li class="p-4">
                 <div class="flex items-start justify-between gap-3">
                   <div class="min-w-0">
@@ -270,6 +284,17 @@ const DATE_FORMATTER = new Intl.DateTimeFormat('pt-BR', {
             }
           </ul>
         }
+
+        <div #loadMoreSentinel class="h-2 w-full" aria-hidden="true"></div>
+        @if (!store.loading() && !store.error() && store.filteredTotal() > 0) {
+          <div class="flex items-center justify-center border-t border-border-subtle px-4 py-3 text-xs text-content-muted" aria-live="polite">
+            @if (store.hasMoreItems()) {
+              <span>Role para carregar mais parceiros…</span>
+            } @else {
+              <span>{{ store.filteredTotal() === 1 ? '1 parceiro carregado' : store.filteredTotal() + ' parceiros carregados' }}</span>
+            }
+          </div>
+        }
       </div>
     </section>
 
@@ -299,10 +324,13 @@ const DATE_FORMATTER = new Intl.DateTimeFormat('pt-BR', {
     />
   `,
 })
-export class PartnersComponent implements OnInit {
+export class PartnersComponent implements OnInit, AfterViewInit, OnDestroy {
   protected readonly store = inject(PartnersStore);
   private readonly route = inject(ActivatedRoute);
   private readonly toast = inject(ToastService);
+  private readonly loadMoreSentinel = viewChild<ElementRef<HTMLElement>>('loadMoreSentinel');
+  private loadMoreObserver?: IntersectionObserver;
+  private loadMoreFrame?: number;
 
   protected readonly categories = PARTNER_CATEGORIES;
   protected readonly categoryLabels = PARTNER_CATEGORY_LABELS;
@@ -335,12 +363,65 @@ export class PartnersComponent implements OnInit {
     return DATE_FORMATTER.format(new Date(Math.max(...dates)));
   });
 
+  constructor() {
+    effect(() => {
+      // Reavalia a sentinela após a lista mudar de tamanho. Isso cobre o caso
+      // em que ela já está visível quando os dados terminam de carregar.
+      this.store.visibleItems().length;
+      this.store.loading();
+      this.scheduleLoadCheck();
+    });
+  }
+
   ngOnInit(): void {
     const status = this.route.snapshot.queryParamMap.get('status');
     if (status === 'EM_ANALISE' || status === 'HOMOLOGADO' || status === 'BLOQUEADO') {
       this.store.setFilters({ status });
     }
     void this.store.load();
+  }
+
+  ngAfterViewInit(): void {
+    const sentinel = this.loadMoreSentinel()?.nativeElement;
+    if (!sentinel || typeof IntersectionObserver === 'undefined') return;
+
+    this.loadMoreObserver = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          this.loadIfSentinelNearViewport();
+        }
+      },
+      { rootMargin: '0px 0px 320px 0px' }
+    );
+    this.loadMoreObserver.observe(sentinel);
+    this.scheduleLoadCheck();
+  }
+
+  ngOnDestroy(): void {
+    this.loadMoreObserver?.disconnect();
+    if (this.loadMoreFrame !== undefined) {
+      cancelAnimationFrame(this.loadMoreFrame);
+    }
+  }
+
+  private scheduleLoadCheck(): void {
+    if (typeof requestAnimationFrame === 'undefined') return;
+    if (this.loadMoreFrame !== undefined) {
+      cancelAnimationFrame(this.loadMoreFrame);
+    }
+    this.loadMoreFrame = requestAnimationFrame(() => {
+      this.loadMoreFrame = undefined;
+      this.loadIfSentinelNearViewport();
+    });
+  }
+
+  private loadIfSentinelNearViewport(): void {
+    if (this.store.loading() || !this.store.hasMoreItems()) return;
+    const sentinel = this.loadMoreSentinel()?.nativeElement;
+    if (!sentinel) return;
+    if (sentinel.getBoundingClientRect().top <= window.innerHeight + 320) {
+      this.store.loadMoreItems();
+    }
   }
 
   protected onSearch(event: Event): void {

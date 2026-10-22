@@ -1,5 +1,5 @@
 /**
- * Single source of truth for the product version shown in the shell and README.
- * Keep this in sync with package.json when the cycle closes.
+ * Product version shown in the shell and mirrored by the README badge.
+ * Keep this, package.json, and the README badge in sync when releasing.
  */
-export const APP_VERSION = '1.1.0';
+export const APP_VERSION = '2.0.0';

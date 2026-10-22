@@ -174,18 +174,18 @@ export type TransactionFormValue = Omit<TreasuryTransaction, 'id'>;
           </div>
 
           <!-- Actions -->
-          <div class="flex items-center justify-end gap-3 pt-4 border-t border-border-subtle">
+          <div class="flex items-center justify-end gap-2 pt-4 border-t border-border-subtle">
             <button
               type="button"
+              class="ui-btn"
               (click)="close.emit()"
-              class="px-4 py-2 rounded-lg text-xs font-medium text-content-muted hover:text-content-primary hover:bg-canvas-surface transition-colors focus-visible:ring-2 focus-visible:ring-brand"
             >
               Cancelar
             </button>
             <button
               type="submit"
               [disabled]="form.invalid || submitting"
-              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium text-xs shadow-brand-glow transition-colors focus-visible:ring-2 focus-visible:ring-brand"
+              class="ui-btn ui-btn-primary"
             >
               <lucide-icon [img]="SaveIcon" [size]="16" />
               {{ submitting ? 'Salvando…' : 'Salvar Lançamento' }}

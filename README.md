@@ -4,8 +4,9 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0_Strict-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![NgRx Signals](https://img.shields.io/badge/@ngrx/signals-19-BA2BD2?style=flat-square&logo=ngrx&logoColor=white)](https://ngrx.io)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4-38B2AC?style=flat-square&logo=tailwind-css&logoColor=white)](https://tailwindcss.com)
-![Vitest](https://img.shields.io/badge/Vitest-55_passing-6E9F18?style=flat-square&logo=vitest&logoColor=white)
+![Vitest](https://img.shields.io/badge/Vitest-57_passing-6E9F18?style=flat-square&logo=vitest&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
+![AxiomERP](https://img.shields.io/badge/AxiomERP-2.0.0-2563EB?style=flat-square)
 
 **Demo ao vivo:** https://axiomerp.vercel.app
 
@@ -33,13 +34,13 @@ Aplicação Angular 22 client-side de gestão de supply chain, estoque multi-arm
 - Estados completos: erro → loading (skeleton) → vazio → dados
 
 ### Parceiros (`/partners`)
-- 12 parceiros seedados com CNPJs válidos (dígitos verificadores)
+- 62 parceiros seedados com CNPJs válidos (dígitos verificadores), volume para testar o scroll infinito em blocos de 20
 - Store com KPIs globais: total, homologados, bloqueados, crédito usado (%)
 - Filtros combinados: busca (nome/CNPJ/e-mail), categoria, status, UF
 - CRUD completo: criar, editar, homologar, bloquear (com motivo), excluir
 - Validações: CNPJ único/válido, transições de status permitidas, exclusão bloqueada se houver crédito ou transações
 - Query param `?status=BLOQUEADO` funcional
-- Tabela desktop / cards mobile, ordenação, 4 estados
+- Tabela desktop / cards mobile, ordenação, scroll infinito, 4 estados
 
 ### Tesouraria (`/treasury`)
 - 120 transações seedadas (−5 a +2 meses), status PENDING/COMPLETED/CANCELLED
@@ -70,7 +71,7 @@ Aplicação Angular 22 client-side de gestão de supply chain, estoque multi-arm
 | "API" | `HttpInterceptorFn` (`mock-api.interceptor.ts`) |
 | UI | Tailwind CSS 3.4 + SCSS, `@angular/cdk` (virtual scroll, overlay), `lucide-angular` |
 | Testes | Vitest 4 + `@analogjs/vitest-angular` (jsdom) |
-| Seed | PRNG próprio (`mulberry32`), 500 SKUs, 120 transações, 12 parceiros |
+| Seed | PRNG próprio (`mulberry32`), 500 SKUs, 120 transações, 62 parceiros |
 
 ---
 
@@ -79,19 +80,19 @@ Aplicação Angular 22 client-side de gestão de supply chain, estoque multi-arm
 ```bash
 npm install
 npm start            # dev server em http://localhost:4200
-npm test             # vitest run (55 testes, ~11s)
+npm test             # vitest run (57 testes, ~11s)
 npm run type-check   # tsc --noEmit --project tsconfig.app.json
 npm run build        # ng build --configuration production
 ```
 
-> `npm run lint` não existe (sem ESLint configurado). Não é objetivo deste portfólio.
+> `npm run lint` está quebrado: o script existe, mas `ng lint` não tem target ESLint configurado. Não é objetivo deste portfólio.
 
 ### Checkpoint mínimo antes de considerar uma tarefa concluída
 ```bash
 npm run type-check && npm test && npm run build
 ```
 
-Build de produção atual: **537.87 kB raw / 146.70 kB transfer** (initial), dentro do budget.
+Build de produção atual: **541.18 kB raw / 147.72 kB transfer** (initial), dentro do budget.
 
 ---
 
@@ -149,7 +150,7 @@ Tokens semânticos em `src/styles.scss` + `tailwind.config.js`:
 
 ## Testes
 
-- 55 testes passando: stores (inventory, partners, treasury), interceptors, layout, stat-card, CSV, seed, pure functions do chart
+- 57 testes passando: stores (inventory, partners, treasury), interceptors, layout, stat-card, CSV, seed, pure functions do chart
 - Specs ao lado do arquivo (`*.spec.ts`), `describe`/`it` em pt-BR
 - Setup global em `src/test-setup.ts`: `fake-indexeddb/auto`, zona, `TestBed`
 - Latência simulada (200–500ms) é real nos testes; padrão `flush(650)` ou `vi.useFakeTimers`
@@ -180,7 +181,7 @@ Deep links validados em produção: `/dashboard`, `/inventory`, `/partners`, `/t
 - **Sem upload, e-mail, PWA, offline sync, relatórios avançados, compras**
 - **UI apenas em pt-BR** — sem i18n
 - **Seed de demonstração** — números plausíveis e determinísticos; "Ferramentas de demonstração → Repopular dados" limpa e repopula tudo
-- `npm run lint` não configurado
+- `npm run lint` quebrado — script existe, mas sem target ESLint configurado
 
 ---
 

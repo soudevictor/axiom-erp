@@ -57,12 +57,12 @@ interface Command {
         >
           <h2 id="palette-title" class="sr-only">Buscar comandos e páginas</h2>
 
-          <div class="flex items-center gap-2 border-b border-border-subtle px-3">
+          <div class="flex items-center gap-2 border-b border-border-subtle px-3 transition-colors focus-within:bg-canvas-elevated">
             <lucide-icon [img]="Search" [size]="18" class="shrink-0 text-content-muted" />
             <input
               #paletteInput
               type="text"
-              class="h-12 min-w-0 flex-1 bg-transparent text-sm text-content-primary outline-none placeholder:text-content-disabled"
+              class="h-12 min-w-0 flex-1 bg-transparent text-sm text-content-primary caret-brand outline-none placeholder:text-content-disabled focus:outline-none focus-visible:outline-none"
               placeholder="Buscar comandos e páginas…"
               aria-label="Buscar comandos e páginas"
               aria-controls="palette-results"
